@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0f14" />
+<title>PinchPoint</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#121821; --panel2:#1a2330; --line:#243040;
+    --text:#e7eef7; --muted:#8aa0b6; --accent:#3b82f6;
+    --red:#ef4444; --amber:#f59e0b; --blue:#38bdf8;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  body{min-height:100dvh;display:flex;flex-direction:column;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+  header{display:flex;align-items:center;justify-content:space-between;
+    gap:8px;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--line);
+    position:sticky;top:0;z-index:5}
+  .brand{display:flex;align-items:baseline;gap:8px}
+  .brand h1{font-size:18px;margin:0;letter-spacing:.5px;font-weight:700}
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);
+    display:inline-block;box-shadow:0 0 8px var(--accent)}
+  .brand small{color:var(--muted);font-size:11px}
+  .fps{font-variant-numeric:tabular-nums;font-size:12px;color:var(--muted);
+    background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:4px 10px}
+  .fps b{color:var(--text)}
+
+  .banner{display:none;margin:10px 14px;padding:10px 12px;border-radius:10px;
+    background:#2a1316;border:1px solid var(--red);color:#ffd9dc;font-size:13px;line-height:1.4}
+  .banner.show{display:block}
+  .banner b{color:#fff}
+
+  .bar{padding:10px 14px 0;display:flex;flex-direction:column;gap:8px}
+  .seg{display:flex;gap:6px;background:var(--panel);border:1px solid var(--line);
+    border-radius:12px;padding:6px}
+  .seg button{flex:1;border:0;background:transparent;color:var(--muted);
+    font-size:13px;font-weight:600;padding:9px 6px;border-radius:8px;cursor:pointer;transition:.15s}
+  .seg button.active{background:var(--accent);color:#fff;box-shadow:0 1px 6px rgba(59,130,246,.5)}
+  .ctrls{display:flex;gap:8px}
+  .ctrls button{flex:1;border:1px solid var(--line);background:var(--panel2);
+    color:var(--text);font-size:14px;font-weight:600;padding:11px 8px;border-radius:10px;cursor:pointer}
+  .ctrls button:active{transform:translateY(1px)}
+  .ctrls button:disabled{opacity:.4;cursor:not-allowed}
+  .ctrls button.primary{background:var(--accent);border-color:var(--accent)}
+  .ctrls button.danger{background:#3a1416;border-color:#5b2226;color:#ffd9dc}
+
+  .stage{position:relative;margin:10px 14px 0;background:#000;border-radius:14px;
+    overflow:hidden;border:1px solid var(--line);aspect-ratio:3/4}
+  .stage video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+  .stage canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  .stage .hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    color:var(--muted);font-size:14px;text-align:center;padding:20px}
+
+  .legend{display:flex;gap:14px;flex-wrap:wrap;padding:10px 16px 0;color:var(--muted);font-size:12px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .legend i{width:11px;height:11px;border-radius:50%;display:inline-block}
+  .legend .red{background:var(--red)} .legend .amber{background:var(--amber)} .legend .blue{background:var(--blue)}
+
+  .findings{padding:8px 14px 24px;display:flex;flex-direction:column;gap:8px}
+  .findings h2{font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:8px 2px 2px}
+  .card{display:flex;gap:10px;align-items:flex-start;background:var(--panel);
+    border:1px solid var(--line);border-left-width:4px;border-radius:10px;padding:10px 12px}
+  .card .num{flex:0 0 auto;width:22px;height:22px;border-radius:50%;display:flex;
+    align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#0b0f14}
+  .card .body{flex:1;min-width:0}
+  .card .title{font-size:14px;font-weight:700;line-height:1.2}
+  .card .desc{font-size:12.5px;color:var(--muted);margin-top:2px;line-height:1.35}
+  .card .sev{font-size:10px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;opacity:.85}
+  .card.red{border-left-color:var(--red)} .card.red .num{background:var(--red)} .card.red .sev{color:var(--red)}
+  .card.amber{border-left-color:var(--amber)} .card.amber .num{background:var(--amber)} .card.amber .sev{color:var(--amber)}
+  .card.blue{border-left-color:var(--blue)} .card.blue .num{background:var(--blue)} .card.blue .sev{color:var(--blue)}
+  .card.none{border-left-color:var(--line);color:var(--muted);font-size:13px}
+  footer{padding:0 16px 28px;color:var(--muted);font-size:11px;line-height:1.5}
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="dot"></span>
+      <h1>PinchPoint</h1>
+      <small>live posture pinch-points</small>
+    </div>
+    <div class="fps">FPS <b id="fps">--</b></div>
+  </header>
+
+  <div id="banner" class="banner"></div>
+
+  <div class="bar">
+    <div class="seg" id="positions">
+      <button data-pos="sideR" class="active">Side R</button>
+      <button data-pos="sideL">Side L</button>
+      <button data-pos="back">Back</button>
+      <button data-pos="belly">Belly</button>
+    </div>
+    <div class="ctrls">
+      <button id="startBtn" class="primary">Start</button>
+      <button id="stopBtn" class="danger" disabled>Stop</button>
+      <button id="switchBtn">Switch camera</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="overlay"></canvas>
+    <div class="hint" id="hint">Tap <b>&nbsp;Start&nbsp;</b> to begin. Allow camera access when prompted.</div>
+  </div>
+
+  <div class="legend">
+    <span><i class="red"></i>Priority</span>
+    <span><i class="amber"></i>Monitor</span>
+    <span><i class="blue"></i>Educational</span>
+  </div>
+
+  <div class="findings">
+    <h2>Findings</h2>
+    <div id="findings"></div>
+  </div>
+
+  <footer>
+    PinchPoint runs entirely in your browser. No video leaves your device. Estimates are
+    informational only and not medical advice.
+  </footer>
+
+<script type="module">
+import { FilesetResolver, PoseLandmarker }
+  from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+// ---- DOM ----
+const video   = document.getElementById('video');
+const canvas  = document.getElementById('overlay');
+const ctx     = canvas.getContext('2d');
+const fpsEl   = document.getElementById('fps');
+const banner  = document.getElementById('banner');
+const hint    = document.getElementById('hint');
+const startBtn= document.getElementById('startBtn');
+const stopBtn = document.getElementById('stopBtn');
+const switchBtn=document.getElementById('switchBtn');
+const findingsEl = document.getElementById('findings');
+const posWrap = document.getElementById('positions');
+
+// ---- State ----
+let landmarker = null;
+let stream = null;
+let running = false;
+let rafId = null;
+let facingMode = 'environment';
+let position = 'sideR';
+let lastVideoTime = -1;
+let fpsEma = 0;
+let lastFrameT = 0;
+
+// ---- Landmark indices (MediaPipe Pose, 33 pts) ----
+const L = {
+  nose:0, lEye:2, rEye:5, lEar:7, rEar:8,
+  lSh:11, rSh:12, lEl:13, rEl:14, lWr:15, rWr:16,
+  lHip:23, rHip:24, lKnee:25, rKnee:26, lAnk:27, rAnk:28
+};
+// Skeleton connections (index pairs)
+const BONES = [
+  [L.lSh,L.rSh],[L.lHip,L.rHip],[L.lSh,L.lHip],[L.rSh,L.rHip],
+  [L.lSh,L.lEl],[L.lEl,L.lWr],[L.rSh,L.rEl],[L.rEl,L.rWr],
+  [L.lHip,L.lKnee],[L.lKnee,L.lAnk],[L.rHip,L.rKnee],[L.rKnee,L.rAnk]
+];
+const DOTS = [L.nose,L.lSh,L.rSh,L.lEl,L.rEl,L.lWr,L.rWr,L.lHip,L.rHip,L.lKnee,L.rKnee,L.lAnk,L.rAnk];
+const SEV_COLOR = { priority:'#ef4444', monitor:'#f59e0b', educational:'#38bdf8' };
+
+// ---- Secure-context check ----
+function isSecure(){
+  return window.isSecureContext ||
+    location.protocol === 'https:' ||
+    ['localhost','127.0.0.1','[::1]'].includes(location.hostname);
+}
+function showBanner(html){ banner.innerHTML = html; banner.classList.add('show'); }
+function hideBanner(){ banner.classList.remove('show'); }
+
+if (!isSecure()){
+  showBanner('<b>Insecure connection.</b> The camera only works over <b>HTTPS</b> or via ' +
+    '<b>localhost</b>. You appear to be on plain HTTP — see the serving notes. Start will fail until this is fixed.');
+}
+
+// ---- Geometry helpers (aspect-corrected so x & y distances are comparable) ----
+let aspect = 1; // videoWidth / videoHeight
+function mid(a,b){ return { x:(a.x+b.x)/2, y:(a.y+b.y)/2, visibility:Math.min(a.visibility??1,b.visibility??1) }; }
+function dist(a,b){ const dx=(a.x-b.x)*aspect, dy=(a.y-b.y); return Math.hypot(dx,dy); }
+function vis(p,th=0.5){ return p && (p.visibility===undefined || p.visibility>=th); }
+// angle of line a->b in degrees, aspect-corrected
+function angleDeg(a,b){ return Math.atan2((b.y-a.y),(b.x-a.x)*aspect)*180/Math.PI; }
+function angleDiff(d){ d=Math.abs(d)%360; return d>180?360-d:d; }
+
+// ---- Rule evaluation ----
+// returns { findings:[{n,severity,title,desc,point}], bodyLen }
+function evaluate(lm, pos){
+  const out = [];
+  const sh = mid(lm[L.lSh],lm[L.rSh]);
+  const hip = mid(lm[L.lHip],lm[L.rHip]);
+  const ank = mid(lm[L.lAnk],lm[L.rAnk]);
+  const bodyLen = dist(sh,hip) + dist(hip,ank);
+  if (!isFinite(bodyLen) || bodyLen < 1e-3) return { findings:[], bodyLen:0 };
+  const pct = p => (p/100)*bodyLen;            // threshold as % of body length -> distance
+  let n = 0;
+  const add = (severity,title,desc,point)=> out.push({ n:++n, severity, title, desc, point });
+
+  if (pos === 'sideR' || pos === 'sideL'){
+    // "near" side = side facing camera. Side R -> right-side landmarks, Side L -> left.
+    const near = pos==='sideR'
+      ? { sh:lm[L.rSh], hip:lm[L.rHip], wr:lm[L.rWr], knee:lm[L.rKnee] }
+      : { sh:lm[L.lSh], hip:lm[L.lHip], wr:lm[L.lWr], knee:lm[L.lKnee] };
+
+    // 1. Shoulder protraction — near shoulder pushed forward of hip line
+    if (vis(near.sh) && vis(near.hip)){
+      const fwd = Math.abs(near.sh.x - near.hip.x)*aspect;
+      if (fwd > pct(8))
+        add('monitor','Shoulder protraction',
+          `Top shoulder rolled ~${(fwd/bodyLen*100).toFixed(0)}% body-length forward of the hip line. Rounds the thoracic spine and loads the front of the shoulder.`, near.sh);
+    }
+    // 2. Hand under head
+    if (vis(near.wr) && vis(lm[L.nose])){
+      const d = dist(near.wr, lm[L.nose]);
+      if (d < pct(12))
+        add('monitor','Hand under head',
+          'Hand tucked near the head — common cause of shoulder/wrist compression and brachial-plexus pressure overnight.', near.wr);
+    }
+    // 3. Knee stacking offset — horizontal gap between knees
+    if (vis(lm[L.lKnee]) && vis(lm[L.rKnee])){
+      const off = Math.abs(lm[L.lKnee].x - lm[L.rKnee].x)*aspect;
+      if (off > pct(10))
+        add('monitor','Knee stacking offset',
+          'Top knee has slid forward off the bottom knee, rotating the pelvis. A pillow between the knees usually helps.', mid(lm[L.lKnee],lm[L.rKnee]));
+    }
+    // 4. Shoulder-vs-hip rotation (spinal torsion)
+    if (vis(lm[L.lSh])&&vis(lm[L.rSh])&&vis(lm[L.lHip])&&vis(lm[L.rHip])){
+      const diff = angleDiff(angleDeg(lm[L.lSh],lm[L.rSh]) - angleDeg(lm[L.lHip],lm[L.rHip]));
+      if (diff > 12)
+        add('priority','Shoulder–hip rotation',
+          `Shoulders and hips are twisted ~${diff.toFixed(0)}° apart — spinal torsion that concentrates load in the lumbar segments.`, mid(sh,hip));
+    }
+  }
+
+  else if (pos === 'back'){
+    // 1. Overhead arms
+    let armPt=null, armUp=false;
+    if (vis(lm[L.lWr]) && (sh.y - lm[L.lWr].y) > pct(5)){ armUp=true; armPt=lm[L.lWr]; }
+    if (vis(lm[L.rWr]) && (sh.y - lm[L.rWr].y) > pct(5)){ armUp=true; armPt=armPt||lm[L.rWr]; }
+    if (armUp) add('monitor','Overhead arm position',
+      'One or both arms raised overhead — sustained shoulder flexion can impinge the rotator cuff and stretch the brachial plexus.', armPt||sh);
+    // 2. Shoulder asymmetry (vertical in image)
+    if (vis(lm[L.lSh])&&vis(lm[L.rSh])){
+      const d = Math.abs(lm[L.lSh].y - lm[L.rSh].y);
+      if (d > pct(5)) add('priority','Shoulder asymmetry',
+        'Shoulders are noticeably uneven — suggests rotation or an unsupported gap pulling the shoulder girdle out of line.', mid(lm[L.lSh],lm[L.rSh]));
+    }
+    // 3. Hip asymmetry
+    if (vis(lm[L.lHip])&&vis(lm[L.rHip])){
+      const d = Math.abs(lm[L.lHip].y - lm[L.rHip].y);
+      if (d > pct(5)) add('priority','Hip asymmetry',
+        'Pelvis is tilted/rotated — uneven hips drive a lateral lumbar load.', mid(lm[L.lHip],lm[L.rHip]));
+    }
+    // 4. Educational (always)
+    add('educational','Lumbar curve needs a side photo',
+      'Back-of-body view cannot see lumbar lordosis. Take a side-angle photo (Side R/L) to assess low-back support.', hip);
+  }
+
+  else if (pos === 'belly'){
+    // 1. Cervical rotation — always priority in prone
+    const headTurn = vis(lm[L.nose]) ? (lm[L.nose].x - sh.x)*aspect : 0;
+    const side = headTurn>0 ? 'right' : 'left';
+    add('priority','Cervical rotation',
+      `Prone sleeping forces the head turned to one side (appears turned ${side}). Sustained cervical rotation compresses the facet joints and nerve roots.`, vis(lm[L.nose])?lm[L.nose]:sh);
+    // 2. Prone lumbar extension — educational
+    add('educational','Prone lumbar extension',
+      'Lying face-down extends the lumbar spine and anteriorly tilts the pelvis. A thin pillow under the abdomen reduces this.', hip);
+    // 3. Asymmetric arm position
+    if (vis(lm[L.lWr])&&vis(lm[L.rWr])){
+      const d = Math.abs(lm[L.lWr].y - lm[L.rWr].y);
+      if (d > pct(10)) add('monitor','Asymmetric arm position',
+        'Arms are at very different heights — typically one arm up by the head, twisting the shoulder girdle.', mid(lm[L.lWr],lm[L.rWr]));
+    }
+  }
+
+  return { findings: out, bodyLen };
+}
+
+// ---- Drawing ----
+function resizeCanvas(){
+  // Match canvas pixel buffer to the displayed video box (object-fit:contain).
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(rect.width * dpr);
+  canvas.height = Math.round(rect.height * dpr);
+}
+// Map a normalized landmark to canvas pixels accounting for object-fit:contain + mirror.
+function project(p){
+  const cw = canvas.width, ch = canvas.height;
+  const vw = video.videoWidth || cw, vh = video.videoHeight || ch;
+  const scale = Math.min(cw/vw, ch/vh);
+  const dw = vw*scale, dh = vh*scale;
+  const ox = (cw-dw)/2, oy = (ch-dh)/2;
+  let x = p.x;
+  if (facingMode === 'user') x = 1 - x; // front camera is mirrored in CSS
+  return { x: ox + x*dw, y: oy + p.y*dh };
+}
+function drawScene(lm, findings){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  if (!lm) return;
+  const dpr = window.devicePixelRatio || 1;
+  // bones
+  ctx.lineWidth = 3*dpr; ctx.strokeStyle = 'rgba(99,179,237,.85)'; ctx.lineCap='round';
+  for (const [a,b] of BONES){
+    if (!vis(lm[a],0.3) || !vis(lm[b],0.3)) continue;
+    const pa=project(lm[a]), pb=project(lm[b]);
+    ctx.beginPath(); ctx.moveTo(pa.x,pa.y); ctx.lineTo(pb.x,pb.y); ctx.stroke();
+  }
+  // head -> shoulder mid
+  if (vis(lm[L.nose],0.3) && vis(lm[L.lSh],0.3) && vis(lm[L.rSh],0.3)){
+    const pn=project(lm[L.nose]); const sm=project(mid(lm[L.lSh],lm[L.rSh]));
+    ctx.beginPath(); ctx.moveTo(pn.x,pn.y); ctx.lineTo(sm.x,sm.y); ctx.stroke();
+  }
+  // dots
+  ctx.fillStyle = '#e7eef7';
+  for (const i of DOTS){
+    if (!vis(lm[i],0.3)) continue;
+    const p=project(lm[i]);
+    ctx.beginPath(); ctx.arc(p.x,p.y,4.5*dpr,0,Math.PI*2); ctx.fill();
+  }
+  // pinch-point markers
+  ctx.font = `bold ${13*dpr}px -apple-system,Segoe UI,Roboto,sans-serif`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for (const f of findings){
+    if (!f.point) continue;
+    const p = project(f.point);
+    const c = SEV_COLOR[f.severity];
+    ctx.beginPath(); ctx.arc(p.x,p.y,13*dpr,0,Math.PI*2);
+    ctx.fillStyle = c; ctx.globalAlpha=.28; ctx.fill(); ctx.globalAlpha=1;
+    ctx.lineWidth=3*dpr; ctx.strokeStyle=c; ctx.stroke();
+    ctx.fillStyle='#fff'; ctx.fillText(String(f.n), p.x, p.y+0.5*dpr);
+  }
+}
+
+// ---- Findings list render ----
+function renderFindings(list, msg){
+  findingsEl.innerHTML='';
+  if (msg){
+    const d=document.createElement('div'); d.className='card none'; d.textContent=msg;
+    findingsEl.appendChild(d); return;
+  }
+  if (!list.length){
+    const d=document.createElement('div'); d.className='card none';
+    d.textContent='No pinch-points flagged for this position.'; findingsEl.appendChild(d); return;
+  }
+  for (const f of list){
+    const card=document.createElement('div'); card.className='card '+
+      (f.severity==='priority'?'red':f.severity==='monitor'?'amber':'blue');
+    card.innerHTML =
+      `<div class="num">${f.n}</div><div class="body">`+
+      `<div class="sev">${f.severity}</div>`+
+      `<div class="title">${f.title}</div>`+
+      `<div class="desc">${f.desc}</div></div>`;
+    findingsEl.appendChild(card);
+  }
+}
+
+// ---- Model load ----
+async function ensureModel(){
+  if (landmarker) return landmarker;
+  hint.innerHTML = 'Loading pose model…';
+  const fileset = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+  landmarker = await PoseLandmarker.createFromOptions(fileset, {
+    baseOptions:{
+      modelAssetPath:"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+      delegate:"GPU"
+    },
+    runningMode:"VIDEO",
+    numPoses:1,
+    minPoseDetectionConfidence:0.5,
+    minPosePresenceConfidence:0.5,
+    minTrackingConfidence:0.5
+  });
+  return landmarker;
+}
+
+// ---- Camera ----
+async function startStream(){
+  if (stream) stopStream();
+  stream = await navigator.mediaDevices.getUserMedia({
+    video:{ facingMode:{ ideal:facingMode }, width:{ideal:1280}, height:{ideal:720} },
+    audio:false
+  });
+  video.srcObject = stream;
+  // mirror front camera in CSS to match projection
+  video.style.transform = facingMode==='user' ? 'scaleX(-1)' : 'none';
+  await video.play();
+  await new Promise(r=>{ if (video.videoWidth) r(); else video.onloadedmetadata=()=>r(); });
+  aspect = video.videoWidth / video.videoHeight;
+  resizeCanvas();
+}
+function stopStream(){
+  if (stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  video.srcObject=null;
+}
+
+// ---- Loop ----
+function loop(){
+  if (!running) return;
+  rafId = requestAnimationFrame(loop);
+  if (!landmarker || video.readyState < 2) return;
+
+  const now = performance.now();
+  if (video.currentTime !== lastVideoTime){
+    lastVideoTime = video.currentTime;
+    let res=null;
+    try { res = landmarker.detectForVideo(video, now); } catch(e){ /* transient */ }
+    const lm = res && res.landmarks && res.landmarks[0];
+    if (lm){
+      hint.style.display='none';
+      const { findings } = evaluate(lm, position);
+      drawScene(lm, findings);
+      renderFindings(findings);
+    } else {
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      renderFindings([], 'No person detected — make sure the whole body is in frame.');
+    }
+  }
+  // FPS (EMA)
+  if (lastFrameT){
+    const inst = 1000/Math.max(1, now-lastFrameT);
+    fpsEma = fpsEma ? fpsEma*0.9 + inst*0.1 : inst;
+    fpsEl.textContent = fpsEma.toFixed(0);
+  }
+  lastFrameT = now;
+}
+
+// ---- Controls ----
+async function start(){
+  if (!isSecure()){
+    showBanner('<b>Insecure connection.</b> The camera needs <b>HTTPS</b> or <b>localhost</b>. Cannot start.');
+    return;
+  }
+  try{
+    startBtn.disabled=true;
+    hint.style.display='flex';
+    await ensureModel();
+    await startStream();
+    hideBanner();
+    running=true; stopBtn.disabled=false;
+    lastVideoTime=-1; lastFrameT=0; fpsEma=0;
+    loop();
+  }catch(err){
+    startBtn.disabled=false;
+    handleCameraError(err);
+  }
+}
+function stop(){
+  running=false;
+  if (rafId) cancelAnimationFrame(rafId);
+  stopStream();
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  fpsEl.textContent='--';
+  startBtn.disabled=false; stopBtn.disabled=true;
+  hint.style.display='flex';
+  hint.innerHTML='Stopped. Tap <b>&nbsp;Start&nbsp;</b> to resume.';
+  renderFindings([], 'Camera stopped.');
+}
+async function switchCamera(){
+  facingMode = facingMode==='environment' ? 'user' : 'environment';
+  if (running){
+    try{ await startStream(); }
+    catch(err){ handleCameraError(err); }
+  }
+}
+function handleCameraError(err){
+  const name = err && err.name || '';
+  let msg = '<b>Camera error.</b> '+(err && err.message || '');
+  if (name==='NotAllowedError' || name==='SecurityError')
+    msg = '<b>Camera permission denied.</b> Enable camera access for this site in your browser settings, then tap Start again.';
+  else if (name==='NotFoundError' || name==='OverconstrainedError')
+    msg = '<b>No matching camera found.</b> Try the Switch camera button.';
+  else if (name==='NotReadableError')
+    msg = '<b>Camera is busy.</b> Another app may be using it — close it and retry.';
+  showBanner(msg);
+}
+
+// ---- Wire up ----
+startBtn.addEventListener('click', start);
+stopBtn.addEventListener('click', stop);
+switchBtn.addEventListener('click', switchCamera);
+posWrap.addEventListener('click', e=>{
+  const b = e.target.closest('button[data-pos]'); if(!b) return;
+  position = b.dataset.pos;
+  [...posWrap.children].forEach(c=>c.classList.toggle('active', c===b));
+});
+window.addEventListener('resize', ()=>{ if (video.videoWidth) resizeCanvas(); });
+renderFindings([], 'Choose a position and tap Start.');
+</script>
+</body>
+</html>
