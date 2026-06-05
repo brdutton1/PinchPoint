@@ -119,6 +119,25 @@
   .acts button.primary{grid-column:1 / -1;background:var(--accent);border-color:var(--accent)}
   .acts button.ghost{background:transparent}
   .modal .note{color:var(--muted);font-size:11px;line-height:1.45}
+
+  /* ---- Phone landscape: video fills the height on the left, controls + findings
+         scroll in a column on the right, so nothing gets pushed off-screen ---- */
+  @media (orientation:landscape) and (max-height:600px){
+    body{height:100dvh;overflow:hidden}
+    header{padding:6px 14px}
+    .work{flex:1;min-height:0;display:flex;flex-direction:row;gap:8px;padding:8px 10px}
+    .stage{margin:0;height:100%;flex:1 1 58%;aspect-ratio:auto;border-radius:12px}
+    .side{flex:1 1 42%;height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;
+      display:flex;flex-direction:column;gap:8px;padding-right:2px}
+    .side .bar{padding:0}
+    .side .capture{padding:0}
+    .side .tip{margin:0}
+    .side .tracker{margin:2px 2px 0}
+    .side .legend{padding:2px 0 0}
+    .side .findings{padding:0 0 10px}
+    .side .findings h2{margin:4px 2px 2px}
+    footer{display:none}
+  }
 </style>
 </head>
 <body>
@@ -133,43 +152,47 @@
 
   <div id="banner" class="banner"></div>
 
-  <div class="bar">
-    <div class="seg" id="positions">
-      <button data-pos="sideR" class="active">Side R</button>
-      <button data-pos="sideL">Side L</button>
-      <button data-pos="back">Back</button>
+  <div class="work">
+    <div class="stage">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="overlay"></canvas>
+      <div class="hint" id="hint">Tap <b>&nbsp;Start&nbsp;</b> to begin. Allow camera access when prompted.</div>
+      <div class="countdown" id="countdown"></div>
     </div>
-    <div class="ctrls">
-      <button id="startBtn" class="primary">Start</button>
-      <button id="stopBtn" class="danger" disabled>Stop</button>
-      <button id="switchBtn">Switch camera</button>
+
+    <div class="side">
+      <div class="bar">
+        <div class="seg" id="positions">
+          <button data-pos="sideR" class="active">Side R</button>
+          <button data-pos="sideL">Side L</button>
+          <button data-pos="back">Back</button>
+        </div>
+        <div class="ctrls">
+          <button id="startBtn" class="primary">Start</button>
+          <button id="stopBtn" class="danger" disabled>Stop</button>
+          <button id="switchBtn">Switch camera</button>
+        </div>
+      </div>
+
+      <div class="capture">
+        <button id="captureBtn" disabled>📷 Capture (3s timer)</button>
+        <button id="reviewBtn" class="review" disabled>Send to chiropractor</button>
+      </div>
+
+      <p class="tip" id="tip"></p>
+      <p class="tracker" id="tracker"></p>
+
+      <div class="legend">
+        <span><i class="red"></i>Priority</span>
+        <span><i class="amber"></i>Monitor</span>
+        <span><i class="blue"></i>Educational</span>
+      </div>
+
+      <div class="findings">
+        <h2>Findings</h2>
+        <div id="findings"></div>
+      </div>
     </div>
-  </div>
-
-  <div class="stage">
-    <video id="video" autoplay playsinline muted></video>
-    <canvas id="overlay"></canvas>
-    <div class="hint" id="hint">Tap <b>&nbsp;Start&nbsp;</b> to begin. Allow camera access when prompted.</div>
-    <div class="countdown" id="countdown"></div>
-  </div>
-
-  <p class="tip" id="tip"></p>
-  <p class="tracker" id="tracker"></p>
-
-  <div class="capture">
-    <button id="captureBtn" disabled>📷 Capture (3s timer)</button>
-    <button id="reviewBtn" class="review" disabled>Send to chiropractor</button>
-  </div>
-
-  <div class="legend">
-    <span><i class="red"></i>Priority</span>
-    <span><i class="amber"></i>Monitor</span>
-    <span><i class="blue"></i>Educational</span>
-  </div>
-
-  <div class="findings">
-    <h2>Findings</h2>
-    <div id="findings"></div>
   </div>
 
   <footer>
