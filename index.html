@@ -39,6 +39,7 @@
   .seg button{flex:1;border:0;background:transparent;color:var(--muted);
     font-size:13px;font-weight:600;padding:9px 6px;border-radius:8px;cursor:pointer;transition:.15s}
   .seg button.active{background:var(--accent);color:#fff;box-shadow:0 1px 6px rgba(59,130,246,.5)}
+  .seg button.done::after{content:" ✓";color:#34d399;font-weight:800}
   .ctrls{display:flex;gap:8px}
   .ctrls button{flex:1;border:1px solid var(--line);background:var(--panel2);
     color:var(--text);font-size:14px;font-weight:600;padding:11px 8px;border-radius:10px;cursor:pointer}
@@ -53,6 +54,11 @@
   .stage canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
   .stage .hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     color:var(--muted);font-size:14px;text-align:center;padding:20px}
+  .stage .countdown{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    background:rgba(2,6,12,.45);color:#fff;font-size:38vw;font-weight:800;
+    text-shadow:0 2px 24px rgba(0,0,0,.6);z-index:3;cursor:pointer}
+  .stage .countdown.show{display:flex}
+  @media (min-width:520px){ .stage .countdown{font-size:180px} }
 
   .legend{display:flex;gap:14px;flex-wrap:wrap;padding:10px 16px 0;color:var(--muted);font-size:12px}
   .legend span{display:inline-flex;align-items:center;gap:6px}
@@ -77,12 +83,19 @@
 
   .tip{margin:8px 16px 0;padding:8px 12px;background:var(--panel);border:1px solid var(--line);
     border-radius:10px;color:var(--muted);font-size:12px;line-height:1.4}
-  .capture{padding:8px 14px 0}
+  .capture{padding:8px 14px 0;display:flex;flex-direction:column;gap:8px}
   .capture button{width:100%;border:1px solid var(--accent);background:var(--accent);
     color:#fff;font-size:15px;font-weight:700;padding:13px 8px;border-radius:12px;cursor:pointer;
     box-shadow:0 2px 10px rgba(59,130,246,.4)}
   .capture button:active{transform:translateY(1px)}
   .capture button:disabled{opacity:.4;cursor:not-allowed;box-shadow:none}
+  .capture button.review{background:var(--panel2);border-color:var(--line);color:var(--text);box-shadow:none}
+  .capture button.review:not(:disabled){border-color:#34d399;color:#d8fbe9}
+  .tracker{margin:6px 16px 0;color:var(--muted);font-size:12px}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(8px);
+    background:#13351f;border:1px solid #2f7d52;color:#d8fbe9;padding:10px 16px;border-radius:999px;
+    font-size:13px;font-weight:600;opacity:0;transition:.25s;z-index:60;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
   .modal{position:fixed;inset:0;z-index:50;background:rgba(2,6,12,.86);
     display:none;align-items:flex-start;justify-content:center;overflow-y:auto;padding:16px}
@@ -92,6 +105,10 @@
   .sheet h3{margin:0;font-size:16px}
   .sheet .sub{color:var(--muted);font-size:12px;margin-top:-6px}
   .sheet img{width:100%;border-radius:10px;border:1px solid var(--line);background:#000;display:block}
+  .thumbs{display:flex;flex-direction:column;gap:10px}
+  .thumb{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#000}
+  .thumb .lbl{padding:6px 10px;font-size:12px;font-weight:700;color:var(--text);background:var(--panel2)}
+  .thumb img{border:0;border-radius:0}
   .sheet textarea{width:100%;min-height:96px;resize:vertical;background:var(--bg);
     color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;
     font-size:12px;line-height:1.4;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
@@ -133,12 +150,15 @@
     <video id="video" autoplay playsinline muted></video>
     <canvas id="overlay"></canvas>
     <div class="hint" id="hint">Tap <b>&nbsp;Start&nbsp;</b> to begin. Allow camera access when prompted.</div>
+    <div class="countdown" id="countdown"></div>
   </div>
 
   <p class="tip" id="tip"></p>
+  <p class="tracker" id="tracker"></p>
 
   <div class="capture">
-    <button id="captureBtn" disabled>📷 Capture &amp; Send</button>
+    <button id="captureBtn" disabled>📷 Capture (3s timer)</button>
+    <button id="reviewBtn" class="review" disabled>Send to chiropractor</button>
   </div>
 
   <div class="legend">
@@ -159,19 +179,22 @@
 
   <div id="capturePanel" class="modal" role="dialog" aria-modal="true">
     <div class="sheet">
-      <h3>Send to your practitioner</h3>
-      <div class="sub">Annotated snapshot + findings report.</div>
-      <img id="capPreview" alt="Captured posture snapshot" />
+      <h3>Send to your chiropractor</h3>
+      <div class="sub" id="capSub">Annotated snapshots + findings report.</div>
+      <div class="thumbs" id="capThumbs"></div>
       <div class="acts">
-        <button id="shareBtn" class="primary">Share…</button>
-        <button id="downloadBtn">Download image</button>
-        <button id="emailBtn">Email</button>
+        <button id="shareBtn" class="primary">Share all…</button>
+        <button id="downloadBtn">Download all</button>
+        <button id="emailBtn">Email report</button>
         <button id="closeCapBtn" class="ghost">Close</button>
+        <button id="startOverBtn" class="ghost">Start over</button>
       </div>
       <div class="note" id="capNote"></div>
       <textarea id="capReport" readonly></textarea>
     </div>
   </div>
+
+  <div class="toast" id="toast"></div>
 
 <script type="module">
 import { FilesetResolver, PoseLandmarker }
@@ -190,15 +213,21 @@ const switchBtn=document.getElementById('switchBtn');
 const findingsEl = document.getElementById('findings');
 const posWrap = document.getElementById('positions');
 const captureBtn = document.getElementById('captureBtn');
+const reviewBtn = document.getElementById('reviewBtn');
 const tipEl = document.getElementById('tip');
+const trackerEl = document.getElementById('tracker');
+const countdownEl = document.getElementById('countdown');
+const toastEl = document.getElementById('toast');
 const capturePanel = document.getElementById('capturePanel');
-const capPreview = document.getElementById('capPreview');
+const capThumbs = document.getElementById('capThumbs');
+const capSub = document.getElementById('capSub');
 const capReport = document.getElementById('capReport');
 const capNote = document.getElementById('capNote');
 const shareBtn = document.getElementById('shareBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 const emailBtn = document.getElementById('emailBtn');
 const closeCapBtn = document.getElementById('closeCapBtn');
+const startOverBtn = document.getElementById('startOverBtn');
 
 // ---- State ----
 let landmarker = null;
@@ -213,8 +242,10 @@ let lastFrameT = 0;
 let lastLandmarks = null;   // cached for capture (outside the render loop)
 let lastFindings = [];
 let lastSkipped = [];
-let capBlobUrl = null;      // object URL for the current snapshot
-let capBlob = null;         // the snapshot blob itself
+// session: one captured result per position (in memory only). Each =
+// { position, stamp, blob, url, filename, report }
+const session = { sideR:null, sideL:null, back:null };
+let countdownTimer = null;  // active self-timer handle
 const POS_LABEL = { sideR:'Side (right)', sideL:'Side (left)', back:'Back' };
 const POS_TIP = {
   sideR:'Stand 6–8 ft away, camera at bed height. Capture the whole body, ear to feet, in your natural side-sleep position.',
@@ -612,6 +643,7 @@ async function start(){
 function stop(){
   running=false;
   if (rafId) cancelAnimationFrame(rafId);
+  cancelCountdown();
   stopStream();
   ctx.clearRect(0,0,canvas.width,canvas.height);
   fpsEl.textContent='--';
@@ -750,71 +782,172 @@ function fileShareSupported(){
     navigator.canShare({ files:[ new File([new Blob([new Uint8Array(1)])], 'p.jpg', {type:'image/jpeg'}) ] }); }
   catch(e){ return false; }
 }
-function openCapture(){
-  if (!running){ showBanner('<b>Start the camera first,</b> then frame the body and capture.'); return; }
+// ---- Toast + session tracker ----
+let toastTimer=null;
+function toast(msg){
+  toastEl.textContent=msg; toastEl.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>toastEl.classList.remove('show'), 2200);
+}
+function captureCount(){ return ['sideR','sideL','back'].filter(p=>session[p]).length; }
+function updateTracker(){
+  const mark = p => session[p] ? `${POS_LABEL[p]} ✓` : `${POS_LABEL[p]} —`;
+  trackerEl.textContent = `Captured: ${mark('sideR')} · ${mark('sideL')} · ${mark('back')}`;
+  [...posWrap.children].forEach(b=> b.classList.toggle('done', !!session[b.dataset.pos]));
+  const n=captureCount();
+  reviewBtn.disabled = n===0;
+  reviewBtn.textContent = n ? `Send to chiropractor (${n})` : 'Send to chiropractor';
+}
+
+// ---- Self-timer capture ----
+function beep(freq, ms){
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
+    beep.ctx = beep.ctx || new AC();
+    if (beep.ctx.state==='suspended') beep.ctx.resume();
+    const o=beep.ctx.createOscillator(), g=beep.ctx.createGain();
+    o.frequency.value=freq; o.type='sine'; o.connect(g); g.connect(beep.ctx.destination);
+    g.gain.setValueAtTime(0.001, beep.ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.25, beep.ctx.currentTime+0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, beep.ctx.currentTime+ms/1000);
+    o.start(); o.stop(beep.ctx.currentTime+ms/1000);
+  }catch(e){}
+}
+function cancelCountdown(){
+  if (countdownTimer){ clearTimeout(countdownTimer); countdownTimer=null; }
+  countdownEl.classList.remove('show'); countdownEl.textContent='';
+  if (running) captureBtn.disabled=false;
+}
+function startTimedCapture(){
+  if (!running){ showBanner('<b>Start the camera first,</b> then get into position and tap Capture.'); return; }
+  if (countdownTimer) { cancelCountdown(); return; }   // tapping again cancels
+  captureBtn.disabled=true;
+  let n=3;
+  const tick=()=>{
+    if (n>0){
+      countdownEl.textContent=String(n); countdownEl.classList.add('show'); beep(660,120); n--;
+      countdownTimer=setTimeout(tick, 1000);
+    } else {
+      countdownEl.classList.remove('show'); countdownEl.textContent=''; countdownTimer=null;
+      beep(990,200);
+      captureCurrent();
+      captureBtn.disabled=false;
+    }
+  };
+  tick();
+}
+countdownEl.addEventListener('click', cancelCountdown);
+
+function captureCurrent(){
+  const pos=position;
   const stamp=nowStamp();
+  const report=buildReportText(stamp);
   const cv=buildSnapshotCanvas(stamp);
-  capReport.value=buildReportText(stamp);
   cv.toBlob(blob=>{
-    if (!blob) return;
-    if (capBlobUrl) URL.revokeObjectURL(capBlobUrl);
-    capBlob=blob; capBlobUrl=URL.createObjectURL(blob);
-    capPreview.src=capBlobUrl;
-    capPreview.dataset.filename=`pinchpoint-${stamp.file}.jpg`;
-    capturePanel.classList.add('show');
+    if (!blob){ toast('Capture failed — try again'); return; }
+    const slot=session[pos];
+    if (slot && slot.url) URL.revokeObjectURL(slot.url);
+    session[pos]={ position:pos, stamp, blob, url:URL.createObjectURL(blob),
+      filename:`pinchpoint-${pos}-${stamp.file}.jpg`, report };
+    updateTracker();
+    toast(`${POS_LABEL[pos]} captured ✓`);
   }, 'image/jpeg', 0.92);
+}
+
+// ---- Combined review + send ----
+function buildCombinedReport(){
+  const caps=['sideR','sideL','back'].map(p=>session[p]).filter(Boolean);
+  const out=[];
+  out.push('PinchPoint — sleep posture observation report');
+  out.push(`Generated: ${nowStamp().date} ${nowStamp().time}`);
+  out.push(`Positions captured: ${caps.length}`);
+  out.push('');
+  for (const r of caps){
+    out.push('────────────────────────');
+    out.push(r.report);
+    out.push('');
+  }
+  out.push('Shared from PinchPoint. Observations only — not a medical diagnosis.');
+  return out.join('\n');
+}
+function openReview(){
+  const caps=['sideR','sideL','back'].map(p=>session[p]).filter(Boolean);
+  if (!caps.length){ toast('Capture a position first'); return; }
+  capThumbs.innerHTML='';
+  for (const r of caps){
+    const wrap=document.createElement('div'); wrap.className='thumb';
+    const lbl=document.createElement('div'); lbl.className='lbl';
+    lbl.textContent=`${POS_LABEL[r.position]} · ${r.stamp.date} ${r.stamp.time}`;
+    const img=document.createElement('img'); img.src=r.url; img.alt=`${POS_LABEL[r.position]} annotated snapshot`;
+    wrap.appendChild(lbl); wrap.appendChild(img); capThumbs.appendChild(wrap);
+  }
+  capSub.textContent = `${caps.length} position${caps.length>1?'s':''} ready to send.`;
+  capReport.value = buildCombinedReport();
   const canShareFiles=fileShareSupported();
   shareBtn.style.display = canShareFiles ? '' : 'none';
   capNote.textContent = canShareFiles
-    ? 'Share opens your phone’s share sheet — pick Mail or Messages to send the image to your practitioner.'
-    : 'On this device: tap Download to save the image, then attach it to an email. The Email button pre-fills the report text.';
+    ? 'Share all opens your phone’s share sheet — pick Mail or Messages to send every image to your chiropractor at once.'
+    : 'On this device: Download all to save the images, then attach them to an email. Email pre-fills the report text.';
+  capturePanel.classList.add('show');
 }
-function closeCapture(){
-  capturePanel.classList.remove('show');
-  if (capBlobUrl){ URL.revokeObjectURL(capBlobUrl); capBlobUrl=null; }
-  capBlob=null; capPreview.removeAttribute('src');
+function closeReview(){ capturePanel.classList.remove('show'); }
+function sessionFiles(){
+  return ['sideR','sideL','back'].map(p=>session[p]).filter(Boolean)
+    .map(r=> new File([r.blob], r.filename, {type:'image/jpeg'}));
 }
-async function shareCapture(){
-  if (!capBlob) return;
-  const file=new File([capBlob], capPreview.dataset.filename||'pinchpoint.jpg', {type:'image/jpeg'});
+async function shareSession(){
+  const files=sessionFiles(); if (!files.length) return;
   try{
-    if (navigator.canShare && navigator.canShare({files:[file]}))
-      await navigator.share({ files:[file], title:'PinchPoint findings', text:capReport.value });
+    if (navigator.canShare && navigator.canShare({files}))
+      await navigator.share({ files, title:'PinchPoint sleep posture findings', text:capReport.value });
     else
-      downloadCapture();
+      downloadSession();
   }catch(e){ /* user dismissed the share sheet — no-op */ }
 }
-function downloadCapture(){
-  if (!capBlobUrl) return;
-  const a=document.createElement('a');
-  a.href=capBlobUrl; a.download=capPreview.dataset.filename||'pinchpoint.jpg';
-  document.body.appendChild(a); a.click(); a.remove();
+function downloadSession(){
+  const caps=['sideR','sideL','back'].map(p=>session[p]).filter(Boolean);
+  caps.forEach((r,i)=> setTimeout(()=>{
+    const a=document.createElement('a'); a.href=r.url; a.download=r.filename;
+    document.body.appendChild(a); a.click(); a.remove();
+  }, i*400));
 }
-function emailCapture(){
-  const subject=encodeURIComponent('PinchPoint posture findings');
-  const body=encodeURIComponent(capReport.value+'\n\n(Please find the annotated image attached.)');
+function emailSession(){
+  const subject=encodeURIComponent('PinchPoint sleep posture findings');
+  const body=encodeURIComponent(capReport.value+'\n\n(Please find the annotated images attached.)');
   window.location.href=`mailto:?subject=${subject}&body=${body}`;
+}
+function clearSession(){
+  for (const p of ['sideR','sideL','back']){
+    if (session[p] && session[p].url) URL.revokeObjectURL(session[p].url);
+    session[p]=null;
+  }
+  updateTracker(); closeReview(); toast('Started over');
 }
 
 // ---- Wire up ----
 startBtn.addEventListener('click', start);
 stopBtn.addEventListener('click', stop);
 switchBtn.addEventListener('click', switchCamera);
-captureBtn.addEventListener('click', openCapture);
-shareBtn.addEventListener('click', shareCapture);
-downloadBtn.addEventListener('click', downloadCapture);
-emailBtn.addEventListener('click', emailCapture);
-closeCapBtn.addEventListener('click', closeCapture);
-capturePanel.addEventListener('click', e=>{ if (e.target===capturePanel) closeCapture(); });
+captureBtn.addEventListener('click', startTimedCapture);
+reviewBtn.addEventListener('click', openReview);
+shareBtn.addEventListener('click', shareSession);
+downloadBtn.addEventListener('click', downloadSession);
+emailBtn.addEventListener('click', emailSession);
+closeCapBtn.addEventListener('click', closeReview);
+startOverBtn.addEventListener('click', clearSession);
+capturePanel.addEventListener('click', e=>{ if (e.target===capturePanel) closeReview(); });
 posWrap.addEventListener('click', e=>{
   const b = e.target.closest('button[data-pos]'); if(!b) return;
   position = b.dataset.pos;
   [...posWrap.children].forEach(c=>c.classList.toggle('active', c===b));
   updateTip();
 });
-function updateTip(){ tipEl.textContent = POS_TIP[position] || ''; }
+function updateTip(){
+  tipEl.textContent = (POS_TIP[position] || '') +
+    ' Tip: tap Switch camera to use the front camera so you can see yourself, then tap Capture — a 3-second timer gives you time to get still.';
+}
 window.addEventListener('resize', ()=>{ if (video.videoWidth) resizeCanvas(); });
 updateTip();
+updateTracker();
 renderFindings([], 'Choose a position and tap Start.');
 </script>
 </body>
