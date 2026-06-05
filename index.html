@@ -261,26 +261,40 @@ function angleDeg(a,b){ return Math.atan2((b.y-a.y),(b.x-a.x)*aspect)*180/Math.P
 function angleDiff(d){ d=Math.abs(d)%360; return d>180?360-d:d; }
 function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
 
-// Head support geometry for side positions: apparent neck side-bend (head-neck vs torso)
-// and whether the head has dropped toward the mattress (pillow low) or lifted away (high).
-// Used by BOTH the rule (evaluate) and the overlay (paintPose) so the live view and the
-// captured image agree. Returns {ok:false,...} when the ear/shoulder/hip aren't clearly
-// visible — the ear is often hidden by the pillow — so we never fabricate an angle.
+// Head support geometry for side positions. Models the user's mental picture: a straight
+// line through the body MIDLINE (shoulder-mid -> hip-mid = the spine axis) and how far the
+// head sits OFF that straight line. Head point is the VISIBLE (up-facing) ear — we pick the
+// ear with the higher visibility, never the one buried in the pillow — falling back to an
+// eye/nose centroid only if both ears are hidden. Used by BOTH evaluate() and paintPose() so
+// the live view and the captured image agree. Returns {ok:false} only when the head isn't in
+// frame at all or the trunk midline is missing — so we rarely skip, and never fabricate.
 function headSupportGeom(lm, pos){
   if (!lm || (pos!=='sideR' && pos!=='sideL')) return null;
-  const ear  = pos==='sideR'?lm[L.rEar]:lm[L.lEar];
-  const shP  = pos==='sideR'?lm[L.rSh] :lm[L.lSh];
-  const hipP = pos==='sideR'?lm[L.rHip]:lm[L.lHip];
-  if (!vis(ear,0.5) || !vis(shP,0.5) || !vis(hipP,0.5)) return { ok:false, ear, sh:shP, hip:hipP };
-  const torso = { x:(shP.x-hipP.x)*aspect, y:(shP.y-hipP.y) }; // hip -> shoulder (up the spine)
-  const head  = { x:(ear.x-shP.x)*aspect, y:(ear.y-shP.y) };   // shoulder -> ear (the neck)
-  const tLen=Math.hypot(torso.x,torso.y), hLen=Math.hypot(head.x,head.y);
-  if (tLen<1e-4 || hLen<1e-4) return { ok:false, ear, sh:shP, hip:hipP };
-  let c=(torso.x*head.x+torso.y*head.y)/(tLen*hLen); c=Math.max(-1,Math.min(1,c));
-  const angle=Math.acos(c)*180/Math.PI;            // apparent side-bend from the spine line
-  const neutY = shP.y + (torso.y/tLen)*hLen;        // where the ear would sit if head continued spine
-  const dir = (ear.y > neutY) ? 'toward' : 'away';  // lower in image = toward mattress
-  return { ok:true, ear, sh:shP, hip:hipP, angle, dir };
+  const shM = mid(lm[L.lSh],lm[L.rSh]);
+  const hipM = mid(lm[L.lHip],lm[L.rHip]);
+  if (!vis(shM,0.5) || !vis(hipM,0.5)) return { ok:false };
+  // head point = most-visible ear; fallback to eye/nose centroid if both ears hidden
+  let head=null, headSource='ear';
+  const lE=lm[L.lEar], rE=lm[L.rEar];
+  const lV=(lE&&lE.visibility)||0, rV=(rE&&rE.visibility)||0;
+  if (Math.max(lV,rV) >= 0.5){ head = (rV>=lV) ? rE : lE; }
+  else {
+    const face=[lm[L.lEye],lm[L.rEye],lm[L.nose]].filter(p=>vis(p,0.5));
+    if (face.length){ head={ x:face.reduce((s,p)=>s+p.x,0)/face.length,
+                             y:face.reduce((s,p)=>s+p.y,0)/face.length }; headSource='face'; }
+  }
+  if (!head) return { ok:false };
+  const spine = { x:(shM.x-hipM.x)*aspect, y:(shM.y-hipM.y) }; // hip-mid -> shoulder-mid, up the spine
+  const neck  = { x:(head.x-shM.x)*aspect, y:(head.y-shM.y) }; // shoulder-mid -> head
+  const sLen=Math.hypot(spine.x,spine.y), nLen=Math.hypot(neck.x,neck.y);
+  if (sLen<1e-4 || nLen<1e-4) return { ok:false };
+  let c=(spine.x*neck.x+spine.y*neck.y)/(sLen*nLen); c=Math.max(-1,Math.min(1,c));
+  const angle=Math.acos(c)*180/Math.PI;                 // deviation off the straight spine line (0 = collinear)
+  // neutral head position: shoulder-mid + (head distance) along the straight spine direction
+  const ux=spine.x/sLen, uy=spine.y/sLen;
+  const neutral = { x: shM.x + (ux/aspect)*nLen, y: shM.y + uy*nLen };
+  const dir = (head.y > neutral.y) ? 'toward' : 'away';  // lower in image = toward mattress
+  return { ok:true, head, headSource, sh:shM, hip:hipM, neutral, angle, dir };
 }
 
 // ---- Rule evaluation ----
@@ -309,20 +323,20 @@ function evaluate(lm, pos){
     const hg = headSupportGeom(lm, pos);
     if (hg && !hg.ok){
       skipped.push({ title:'Head support / pillow height',
-        reason:'Ear not clearly visible (often hidden by the pillow). Try the camera a touch higher or further back so the ear, shoulder and hip all show.' });
+        reason:'Head or torso not fully in frame. Capture from the head to the hips so the spine line and the up-facing ear both show.' });
     } else if (hg){
       const a=hg.angle;
       const where  = hg.dir==='toward' ? 'toward the mattress' : 'away from the mattress';
       const pillow = hg.dir==='toward' ? 'pillow may be too low' : 'pillow may be too high';
       if (a < 8){
         add('educational','Head supported near neutral',
-          `Apparent neck side-bend ~${a.toFixed(0)}°. Your head is sitting close to in-line with your spine — a good reference setup to show your chiropractor.`, hg.ear);
+          `Head sits ~${a.toFixed(0)}° off the straight spine line — close to in-line with your spine. A good reference setup to show your chiropractor.`, hg.head);
       } else if (a <= 18){
         add('monitor','Mild head tilt',
-          `Head tilted ~${a.toFixed(0)}° ${where} (apparent). ${cap(pillow)}. Worth tracking — ask your chiropractor what neutral should look like for you.`, hg.ear);
+          `Head ~${a.toFixed(0)}° off the straight spine line, ${where} (apparent). ${cap(pillow)}. Worth tracking — ask your chiropractor what neutral should look like for you.`, hg.head);
       } else {
         add('priority','Head not supported in neutral',
-          `Head tilted ~${a.toFixed(0)}° ${where} (apparent) — the neck is side-bent through the night, which loads the neck and upper back. ${cap(pillow)}; bring this photo to your chiropractor.`, hg.ear);
+          `Head ~${a.toFixed(0)}° off the straight spine line, ${where} (apparent) — the neck is side-bent through the night, which loads the neck and upper back. ${cap(pillow)}; bring this photo to your chiropractor.`, hg.head);
       }
     }
 
@@ -418,17 +432,32 @@ function paintPose(c, lm, findings, proj, s){
     const pn=proj(lm[L.nose]); const sm=proj(mid(lm[L.lSh],lm[L.rSh]));
     c.beginPath(); c.moveTo(pn.x,pn.y); c.lineTo(sm.x,sm.y); c.stroke();
   }
-  // head-support guide line (side positions): ear -> shoulder -> hip + apparent angle
+  // head-support guide (side positions): straight spine line (hip-mid->shoulder-mid) with a
+  // dashed "neutral" extension, the visible ear as its own point, and the angle between them.
   const hg = headSupportGeom(lm, position);
   if (hg && hg.ok){
-    const e=proj(hg.ear), sP=proj(hg.sh), hP=proj(hg.hip);
+    const hd=proj(hg.head), sP=proj(hg.sh), hP=proj(hg.hip), nt=proj(hg.neutral);
     c.save();
-    c.setLineDash([6*s,5*s]); c.lineWidth=2.5*s; c.strokeStyle='rgba(56,189,248,.95)'; c.lineCap='round';
-    c.beginPath(); c.moveTo(hP.x,hP.y); c.lineTo(sP.x,sP.y); c.lineTo(e.x,e.y); c.stroke();
+    c.lineCap='round';
+    // 1a. solid spine line: hip-mid -> shoulder-mid
+    c.lineWidth=3*s; c.strokeStyle='rgba(56,189,248,.95)';
+    c.beginPath(); c.moveTo(hP.x,hP.y); c.lineTo(sP.x,sP.y); c.stroke();
+    // 1b. dashed straight "neutral" line: shoulder-mid -> where a straight spine puts the head
+    c.setLineDash([7*s,6*s]); c.lineWidth=2.5*s; c.strokeStyle='rgba(56,189,248,.7)';
+    c.beginPath(); c.moveTo(sP.x,sP.y); c.lineTo(nt.x,nt.y); c.stroke();
     c.setLineDash([]);
-    c.fillStyle='#bfe9ff'; c.font=`bold ${12*s}px -apple-system,Segoe UI,Roboto,sans-serif`;
+    // 1c. actual head line: shoulder-mid -> visible head/ear (amber if off-line)
+    const off = hg.angle>=8;
+    c.lineWidth=3*s; c.strokeStyle = off ? 'rgba(245,158,11,.95)' : 'rgba(56,189,248,.95)';
+    c.beginPath(); c.moveTo(sP.x,sP.y); c.lineTo(hd.x,hd.y); c.stroke();
+    // 2. the visible ear as its own ringed point
+    c.beginPath(); c.arc(hd.x,hd.y,6*s,0,Math.PI*2);
+    c.fillStyle = off ? 'rgba(245,158,11,.35)' : 'rgba(56,189,248,.35)'; c.fill();
+    c.lineWidth=2.5*s; c.strokeStyle = off ? '#f59e0b' : '#38bdf8'; c.stroke();
+    // 3. angle label
+    c.fillStyle = off ? '#ffd9a8' : '#bfe9ff'; c.font=`bold ${12*s}px -apple-system,Segoe UI,Roboto,sans-serif`;
     c.textAlign='left'; c.textBaseline='middle';
-    c.fillText(`${hg.angle.toFixed(0)}°`, e.x+9*s, e.y);
+    c.fillText(`${hg.angle.toFixed(0)}°`, hd.x+10*s, hd.y);
     c.restore();
   }
   // dots
