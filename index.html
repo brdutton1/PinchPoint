@@ -74,6 +74,32 @@
   .card.blue{border-left-color:var(--blue)} .card.blue .num{background:var(--blue)} .card.blue .sev{color:var(--blue)}
   .card.none{border-left-color:var(--line);color:var(--muted);font-size:13px}
   footer{padding:0 16px 28px;color:var(--muted);font-size:11px;line-height:1.5}
+
+  .capture{padding:8px 14px 0}
+  .capture button{width:100%;border:1px solid var(--accent);background:var(--accent);
+    color:#fff;font-size:15px;font-weight:700;padding:13px 8px;border-radius:12px;cursor:pointer;
+    box-shadow:0 2px 10px rgba(59,130,246,.4)}
+  .capture button:active{transform:translateY(1px)}
+  .capture button:disabled{opacity:.4;cursor:not-allowed;box-shadow:none}
+
+  .modal{position:fixed;inset:0;z-index:50;background:rgba(2,6,12,.86);
+    display:none;align-items:flex-start;justify-content:center;overflow-y:auto;padding:16px}
+  .modal.show{display:flex}
+  .sheet{width:100%;max-width:520px;background:var(--panel);border:1px solid var(--line);
+    border-radius:16px;padding:14px;margin:auto;display:flex;flex-direction:column;gap:12px}
+  .sheet h3{margin:0;font-size:16px}
+  .sheet .sub{color:var(--muted);font-size:12px;margin-top:-6px}
+  .sheet img{width:100%;border-radius:10px;border:1px solid var(--line);background:#000;display:block}
+  .sheet textarea{width:100%;min-height:96px;resize:vertical;background:var(--bg);
+    color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;
+    font-size:12px;line-height:1.4;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .acts button{border:1px solid var(--line);background:var(--panel2);color:var(--text);
+    font-size:14px;font-weight:600;padding:12px 8px;border-radius:10px;cursor:pointer}
+  .acts button:active{transform:translateY(1px)}
+  .acts button.primary{grid-column:1 / -1;background:var(--accent);border-color:var(--accent)}
+  .acts button.ghost{background:transparent}
+  .modal .note{color:var(--muted);font-size:11px;line-height:1.45}
 </style>
 </head>
 <body>
@@ -108,6 +134,10 @@
     <div class="hint" id="hint">Tap <b>&nbsp;Start&nbsp;</b> to begin. Allow camera access when prompted.</div>
   </div>
 
+  <div class="capture">
+    <button id="captureBtn" disabled>📷 Capture &amp; Send</button>
+  </div>
+
   <div class="legend">
     <span><i class="red"></i>Priority</span>
     <span><i class="amber"></i>Monitor</span>
@@ -123,6 +153,22 @@
     PinchPoint runs entirely in your browser. No video leaves your device. Estimates are
     informational only and not medical advice.
   </footer>
+
+  <div id="capturePanel" class="modal" role="dialog" aria-modal="true">
+    <div class="sheet">
+      <h3>Send to your practitioner</h3>
+      <div class="sub">Annotated snapshot + findings report.</div>
+      <img id="capPreview" alt="Captured posture snapshot" />
+      <div class="acts">
+        <button id="shareBtn" class="primary">Share…</button>
+        <button id="downloadBtn">Download image</button>
+        <button id="emailBtn">Email</button>
+        <button id="closeCapBtn" class="ghost">Close</button>
+      </div>
+      <div class="note" id="capNote"></div>
+      <textarea id="capReport" readonly></textarea>
+    </div>
+  </div>
 
 <script type="module">
 import { FilesetResolver, PoseLandmarker }
@@ -140,6 +186,15 @@ const stopBtn = document.getElementById('stopBtn');
 const switchBtn=document.getElementById('switchBtn');
 const findingsEl = document.getElementById('findings');
 const posWrap = document.getElementById('positions');
+const captureBtn = document.getElementById('captureBtn');
+const capturePanel = document.getElementById('capturePanel');
+const capPreview = document.getElementById('capPreview');
+const capReport = document.getElementById('capReport');
+const capNote = document.getElementById('capNote');
+const shareBtn = document.getElementById('shareBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+const emailBtn = document.getElementById('emailBtn');
+const closeCapBtn = document.getElementById('closeCapBtn');
 
 // ---- State ----
 let landmarker = null;
@@ -151,6 +206,11 @@ let position = 'sideR';
 let lastVideoTime = -1;
 let fpsEma = 0;
 let lastFrameT = 0;
+let lastLandmarks = null;   // cached for capture (outside the render loop)
+let lastFindings = [];
+let capBlobUrl = null;      // object URL for the current snapshot
+let capBlob = null;         // the snapshot blob itself
+const POS_LABEL = { sideR:'Side (right)', sideL:'Side (left)', back:'Back', belly:'Belly' };
 
 // ---- Landmark indices (MediaPipe Pose, 33 pts) ----
 const L = {
@@ -302,41 +362,45 @@ function project(p){
   if (facingMode === 'user') x = 1 - x; // front camera is mirrored in CSS
   return { x: ox + x*dw, y: oy + p.y*dh };
 }
-function drawScene(lm, findings){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+// Shared pose painter: draws bones, dots, and numbered pinch-point markers onto any
+// context `c`, using projection `proj` (normalized -> px) and size scale `s`.
+function paintPose(c, lm, findings, proj, s){
   if (!lm) return;
-  const dpr = window.devicePixelRatio || 1;
   // bones
-  ctx.lineWidth = 3*dpr; ctx.strokeStyle = 'rgba(99,179,237,.85)'; ctx.lineCap='round';
+  c.lineWidth = 3*s; c.strokeStyle = 'rgba(99,179,237,.9)'; c.lineCap='round';
   for (const [a,b] of BONES){
     if (!vis(lm[a],0.3) || !vis(lm[b],0.3)) continue;
-    const pa=project(lm[a]), pb=project(lm[b]);
-    ctx.beginPath(); ctx.moveTo(pa.x,pa.y); ctx.lineTo(pb.x,pb.y); ctx.stroke();
+    const pa=proj(lm[a]), pb=proj(lm[b]);
+    c.beginPath(); c.moveTo(pa.x,pa.y); c.lineTo(pb.x,pb.y); c.stroke();
   }
   // head -> shoulder mid
   if (vis(lm[L.nose],0.3) && vis(lm[L.lSh],0.3) && vis(lm[L.rSh],0.3)){
-    const pn=project(lm[L.nose]); const sm=project(mid(lm[L.lSh],lm[L.rSh]));
-    ctx.beginPath(); ctx.moveTo(pn.x,pn.y); ctx.lineTo(sm.x,sm.y); ctx.stroke();
+    const pn=proj(lm[L.nose]); const sm=proj(mid(lm[L.lSh],lm[L.rSh]));
+    c.beginPath(); c.moveTo(pn.x,pn.y); c.lineTo(sm.x,sm.y); c.stroke();
   }
   // dots
-  ctx.fillStyle = '#e7eef7';
+  c.fillStyle = '#e7eef7';
   for (const i of DOTS){
     if (!vis(lm[i],0.3)) continue;
-    const p=project(lm[i]);
-    ctx.beginPath(); ctx.arc(p.x,p.y,4.5*dpr,0,Math.PI*2); ctx.fill();
+    const p=proj(lm[i]);
+    c.beginPath(); c.arc(p.x,p.y,4.5*s,0,Math.PI*2); c.fill();
   }
   // pinch-point markers
-  ctx.font = `bold ${13*dpr}px -apple-system,Segoe UI,Roboto,sans-serif`;
-  ctx.textAlign='center'; ctx.textBaseline='middle';
+  c.font = `bold ${13*s}px -apple-system,Segoe UI,Roboto,sans-serif`;
+  c.textAlign='center'; c.textBaseline='middle';
   for (const f of findings){
     if (!f.point) continue;
-    const p = project(f.point);
-    const c = SEV_COLOR[f.severity];
-    ctx.beginPath(); ctx.arc(p.x,p.y,13*dpr,0,Math.PI*2);
-    ctx.fillStyle = c; ctx.globalAlpha=.28; ctx.fill(); ctx.globalAlpha=1;
-    ctx.lineWidth=3*dpr; ctx.strokeStyle=c; ctx.stroke();
-    ctx.fillStyle='#fff'; ctx.fillText(String(f.n), p.x, p.y+0.5*dpr);
+    const p = proj(f.point);
+    const col = SEV_COLOR[f.severity];
+    c.beginPath(); c.arc(p.x,p.y,13*s,0,Math.PI*2);
+    c.fillStyle = col; c.globalAlpha=.28; c.fill(); c.globalAlpha=1;
+    c.lineWidth=3*s; c.strokeStyle=col; c.stroke();
+    c.fillStyle='#fff'; c.fillText(String(f.n), p.x, p.y+0.5*s);
   }
+}
+function drawScene(lm, findings){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  paintPose(ctx, lm, findings, project, window.devicePixelRatio || 1);
 }
 
 // ---- Findings list render ----
@@ -419,9 +483,11 @@ function loop(){
       const { findings } = evaluate(lm, position);
       drawScene(lm, findings);
       renderFindings(findings);
+      lastLandmarks = lm; lastFindings = findings;
     } else {
       ctx.clearRect(0,0,canvas.width,canvas.height);
       renderFindings([], 'No person detected — make sure the whole body is in frame.');
+      lastLandmarks = null; lastFindings = [];
     }
   }
   // FPS (EMA)
@@ -445,7 +511,7 @@ async function start(){
     await ensureModel();
     await startStream();
     hideBanner();
-    running=true; stopBtn.disabled=false;
+    running=true; stopBtn.disabled=false; captureBtn.disabled=false;
     lastVideoTime=-1; lastFrameT=0; fpsEma=0;
     loop();
   }catch(err){
@@ -459,10 +525,11 @@ function stop(){
   stopStream();
   ctx.clearRect(0,0,canvas.width,canvas.height);
   fpsEl.textContent='--';
-  startBtn.disabled=false; stopBtn.disabled=true;
+  startBtn.disabled=false; stopBtn.disabled=true; captureBtn.disabled=true;
   hint.style.display='flex';
   hint.innerHTML='Stopped. Tap <b>&nbsp;Start&nbsp;</b> to resume.';
   renderFindings([], 'Camera stopped.');
+  lastLandmarks=null; lastFindings=[];
 }
 async function switchCamera(){
   facingMode = facingMode==='environment' ? 'user' : 'environment';
@@ -483,10 +550,153 @@ function handleCameraError(err){
   showBanner(msg);
 }
 
+// ---- Capture & Send ----
+function nowStamp(){
+  const d=new Date(), p=n=>String(n).padStart(2,'0');
+  return {
+    date:`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`,
+    time:`${p(d.getHours())}:${p(d.getMinutes())}`,
+    file:`${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`
+  };
+}
+function wrapText(c, text, maxW){
+  const words=text.split(' '); const lines=[]; let line='';
+  for (const w of words){
+    const test=line?line+' '+w:w;
+    if (c.measureText(test).width>maxW && line){ lines.push(line); line=w; }
+    else line=test;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+function buildReportText(stamp){
+  const out=[];
+  out.push('PinchPoint — posture pinch-point findings');
+  out.push(`Position: ${POS_LABEL[position]}`);
+  out.push(`Captured: ${stamp.date} ${stamp.time}`);
+  out.push('');
+  if (lastFindings.length){
+    for (const f of lastFindings)
+      out.push(`#${f.n} [${f.severity.toUpperCase()}] ${f.title} — ${f.desc}`);
+  } else {
+    out.push('No pinch-points flagged (or no person detected at capture).');
+  }
+  out.push('');
+  out.push('Severity: PRIORITY = address first · MONITOR = keep an eye on · EDUCATIONAL = context.');
+  out.push('Generated by PinchPoint. Informational only — not a medical diagnosis.');
+  return out.join('\n');
+}
+function buildSnapshotCanvas(stamp){
+  const vw=video.videoWidth||720, vh=video.videoHeight||960;
+  const s=Math.max(1, vw/360);                 // size scale for lines/markers/text
+  const pad=18*s, fs=15*s, lh=fs*1.32;
+  const mirror = facingMode==='user';
+  // pre-measure wrapped findings to size the footer band
+  const meas=document.createElement('canvas').getContext('2d');
+  meas.font=`${fs}px -apple-system,Segoe UI,Roboto,sans-serif`;
+  const textW=vw-pad*2-16*s;
+  const items = lastFindings.length ? lastFindings
+    : [{severity:'none', n:'', title:'', desc:'No pinch-points flagged (or no person detected at capture).'}];
+  let rows=0;
+  const wrapped=items.map(f=>{
+    const label=f.n ? `#${f.n} ${(f.severity||'').toUpperCase()} — ${f.title}: ${f.desc}` : f.desc;
+    const w=wrapText(meas,label,textW); rows+=w.length; return {f,w};
+  });
+  const headerH=lh*2+pad, footerH=headerH+rows*lh+lh*2+pad*2;
+  const W=vw, H=vh+footerH;
+
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const c=cv.getContext('2d');
+  c.fillStyle='#0b0f14'; c.fillRect(0,0,W,H);
+  // frozen video frame (mirror front camera to match the overlay)
+  c.save();
+  if (mirror){ c.translate(vw,0); c.scale(-1,1); }
+  c.drawImage(video, 0,0, vw, vh);
+  c.restore();
+  // pose overlay projected onto the full frame
+  const projFull = p => ({ x:(mirror?1-p.x:p.x)*vw, y:p.y*vh });
+  paintPose(c, lastLandmarks, lastFindings, projFull, s);
+
+  // footer report band
+  c.textAlign='left'; c.textBaseline='alphabetic';
+  let y=vh+pad+fs;
+  c.fillStyle='#e7eef7'; c.font=`bold ${fs*1.15}px -apple-system,Segoe UI,Roboto,sans-serif`;
+  c.fillText('PinchPoint — pinch-point findings', pad, y); y+=lh;
+  c.fillStyle='#8aa0b6'; c.font=`${fs*0.9}px -apple-system,Segoe UI,Roboto,sans-serif`;
+  c.fillText(`${POS_LABEL[position]}  ·  ${stamp.date} ${stamp.time}`, pad, y);
+  for (const {f,w} of wrapped){
+    y+=lh;
+    const col=SEV_COLOR[f.severity]||'#8aa0b6';
+    c.fillStyle=col; c.beginPath(); c.arc(pad+5*s, y-fs*0.32, 5*s, 0, Math.PI*2); c.fill();
+    c.fillStyle='#dbe6f2'; c.font=`${fs}px -apple-system,Segoe UI,Roboto,sans-serif`;
+    for (let i=0;i<w.length;i++){ if (i) y+=lh; c.fillText(w[i], pad+16*s, y); }
+  }
+  y+=lh*1.4;
+  c.fillStyle='#6b7f95'; c.font=`${fs*0.82}px -apple-system,Segoe UI,Roboto,sans-serif`;
+  c.fillText('Informational only — not a medical diagnosis.', pad, y);
+  return cv;
+}
+function fileShareSupported(){
+  try { return !!navigator.canShare &&
+    navigator.canShare({ files:[ new File([new Blob([new Uint8Array(1)])], 'p.jpg', {type:'image/jpeg'}) ] }); }
+  catch(e){ return false; }
+}
+function openCapture(){
+  if (!running){ showBanner('<b>Start the camera first,</b> then frame the body and capture.'); return; }
+  const stamp=nowStamp();
+  const cv=buildSnapshotCanvas(stamp);
+  capReport.value=buildReportText(stamp);
+  cv.toBlob(blob=>{
+    if (!blob) return;
+    if (capBlobUrl) URL.revokeObjectURL(capBlobUrl);
+    capBlob=blob; capBlobUrl=URL.createObjectURL(blob);
+    capPreview.src=capBlobUrl;
+    capPreview.dataset.filename=`pinchpoint-${stamp.file}.jpg`;
+    capturePanel.classList.add('show');
+  }, 'image/jpeg', 0.92);
+  const canShareFiles=fileShareSupported();
+  shareBtn.style.display = canShareFiles ? '' : 'none';
+  capNote.textContent = canShareFiles
+    ? 'Share opens your phone’s share sheet — pick Mail or Messages to send the image to your practitioner.'
+    : 'On this device: tap Download to save the image, then attach it to an email. The Email button pre-fills the report text.';
+}
+function closeCapture(){
+  capturePanel.classList.remove('show');
+  if (capBlobUrl){ URL.revokeObjectURL(capBlobUrl); capBlobUrl=null; }
+  capBlob=null; capPreview.removeAttribute('src');
+}
+async function shareCapture(){
+  if (!capBlob) return;
+  const file=new File([capBlob], capPreview.dataset.filename||'pinchpoint.jpg', {type:'image/jpeg'});
+  try{
+    if (navigator.canShare && navigator.canShare({files:[file]}))
+      await navigator.share({ files:[file], title:'PinchPoint findings', text:capReport.value });
+    else
+      downloadCapture();
+  }catch(e){ /* user dismissed the share sheet — no-op */ }
+}
+function downloadCapture(){
+  if (!capBlobUrl) return;
+  const a=document.createElement('a');
+  a.href=capBlobUrl; a.download=capPreview.dataset.filename||'pinchpoint.jpg';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function emailCapture(){
+  const subject=encodeURIComponent('PinchPoint posture findings');
+  const body=encodeURIComponent(capReport.value+'\n\n(Please find the annotated image attached.)');
+  window.location.href=`mailto:?subject=${subject}&body=${body}`;
+}
+
 // ---- Wire up ----
 startBtn.addEventListener('click', start);
 stopBtn.addEventListener('click', stop);
 switchBtn.addEventListener('click', switchCamera);
+captureBtn.addEventListener('click', openCapture);
+shareBtn.addEventListener('click', shareCapture);
+downloadBtn.addEventListener('click', downloadCapture);
+emailBtn.addEventListener('click', emailCapture);
+closeCapBtn.addEventListener('click', closeCapture);
+capturePanel.addEventListener('click', e=>{ if (e.target===capturePanel) closeCapture(); });
 posWrap.addEventListener('click', e=>{
   const b = e.target.closest('button[data-pos]'); if(!b) return;
   position = b.dataset.pos;
