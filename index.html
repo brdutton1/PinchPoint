@@ -75,6 +75,8 @@
   .card.none{border-left-color:var(--line);color:var(--muted);font-size:13px}
   footer{padding:0 16px 28px;color:var(--muted);font-size:11px;line-height:1.5}
 
+  .tip{margin:8px 16px 0;padding:8px 12px;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;color:var(--muted);font-size:12px;line-height:1.4}
   .capture{padding:8px 14px 0}
   .capture button{width:100%;border:1px solid var(--accent);background:var(--accent);
     color:#fff;font-size:15px;font-weight:700;padding:13px 8px;border-radius:12px;cursor:pointer;
@@ -107,7 +109,7 @@
     <div class="brand">
       <span class="dot"></span>
       <h1>PinchPoint</h1>
-      <small>live posture pinch-points</small>
+      <small>side-sleep alignment for your provider</small>
     </div>
     <div class="fps">FPS <b id="fps">--</b></div>
   </header>
@@ -119,7 +121,6 @@
       <button data-pos="sideR" class="active">Side R</button>
       <button data-pos="sideL">Side L</button>
       <button data-pos="back">Back</button>
-      <button data-pos="belly">Belly</button>
     </div>
     <div class="ctrls">
       <button id="startBtn" class="primary">Start</button>
@@ -133,6 +134,8 @@
     <canvas id="overlay"></canvas>
     <div class="hint" id="hint">Tap <b>&nbsp;Start&nbsp;</b> to begin. Allow camera access when prompted.</div>
   </div>
+
+  <p class="tip" id="tip"></p>
 
   <div class="capture">
     <button id="captureBtn" disabled>📷 Capture &amp; Send</button>
@@ -187,6 +190,7 @@ const switchBtn=document.getElementById('switchBtn');
 const findingsEl = document.getElementById('findings');
 const posWrap = document.getElementById('positions');
 const captureBtn = document.getElementById('captureBtn');
+const tipEl = document.getElementById('tip');
 const capturePanel = document.getElementById('capturePanel');
 const capPreview = document.getElementById('capPreview');
 const capReport = document.getElementById('capReport');
@@ -208,9 +212,15 @@ let fpsEma = 0;
 let lastFrameT = 0;
 let lastLandmarks = null;   // cached for capture (outside the render loop)
 let lastFindings = [];
+let lastSkipped = [];
 let capBlobUrl = null;      // object URL for the current snapshot
 let capBlob = null;         // the snapshot blob itself
-const POS_LABEL = { sideR:'Side (right)', sideL:'Side (left)', back:'Back', belly:'Belly' };
+const POS_LABEL = { sideR:'Side (right)', sideL:'Side (left)', back:'Back' };
+const POS_TIP = {
+  sideR:'Stand 6–8 ft away, camera at bed height. Capture the whole body, ear to feet, in your natural side-sleep position.',
+  sideL:'Stand 6–8 ft away, camera at bed height. Capture the whole body, ear to feet, in your natural side-sleep position.',
+  back:'Stand at the foot or side of the bed. Capture the whole body. A side photo is better for the neck and low back.'
+};
 
 // ---- Landmark indices (MediaPipe Pose, 33 pts) ----
 const L = {
@@ -249,16 +259,40 @@ function vis(p,th=0.5){ return p && (p.visibility===undefined || p.visibility>=t
 // angle of line a->b in degrees, aspect-corrected
 function angleDeg(a,b){ return Math.atan2((b.y-a.y),(b.x-a.x)*aspect)*180/Math.PI; }
 function angleDiff(d){ d=Math.abs(d)%360; return d>180?360-d:d; }
+function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+
+// Head support geometry for side positions: apparent neck side-bend (head-neck vs torso)
+// and whether the head has dropped toward the mattress (pillow low) or lifted away (high).
+// Used by BOTH the rule (evaluate) and the overlay (paintPose) so the live view and the
+// captured image agree. Returns {ok:false,...} when the ear/shoulder/hip aren't clearly
+// visible — the ear is often hidden by the pillow — so we never fabricate an angle.
+function headSupportGeom(lm, pos){
+  if (!lm || (pos!=='sideR' && pos!=='sideL')) return null;
+  const ear  = pos==='sideR'?lm[L.rEar]:lm[L.lEar];
+  const shP  = pos==='sideR'?lm[L.rSh] :lm[L.lSh];
+  const hipP = pos==='sideR'?lm[L.rHip]:lm[L.lHip];
+  if (!vis(ear,0.5) || !vis(shP,0.5) || !vis(hipP,0.5)) return { ok:false, ear, sh:shP, hip:hipP };
+  const torso = { x:(shP.x-hipP.x)*aspect, y:(shP.y-hipP.y) }; // hip -> shoulder (up the spine)
+  const head  = { x:(ear.x-shP.x)*aspect, y:(ear.y-shP.y) };   // shoulder -> ear (the neck)
+  const tLen=Math.hypot(torso.x,torso.y), hLen=Math.hypot(head.x,head.y);
+  if (tLen<1e-4 || hLen<1e-4) return { ok:false, ear, sh:shP, hip:hipP };
+  let c=(torso.x*head.x+torso.y*head.y)/(tLen*hLen); c=Math.max(-1,Math.min(1,c));
+  const angle=Math.acos(c)*180/Math.PI;            // apparent side-bend from the spine line
+  const neutY = shP.y + (torso.y/tLen)*hLen;        // where the ear would sit if head continued spine
+  const dir = (ear.y > neutY) ? 'toward' : 'away';  // lower in image = toward mattress
+  return { ok:true, ear, sh:shP, hip:hipP, angle, dir };
+}
 
 // ---- Rule evaluation ----
 // returns { findings:[{n,severity,title,desc,point}], bodyLen }
 function evaluate(lm, pos){
   const out = [];
+  const skipped = [];                          // assessments we couldn't make from this frame
   const sh = mid(lm[L.lSh],lm[L.rSh]);
   const hip = mid(lm[L.lHip],lm[L.rHip]);
   const ank = mid(lm[L.lAnk],lm[L.rAnk]);
   const bodyLen = dist(sh,hip) + dist(hip,ank);
-  if (!isFinite(bodyLen) || bodyLen < 1e-3) return { findings:[], bodyLen:0 };
+  if (!isFinite(bodyLen) || bodyLen < 1e-3) return { findings:[], bodyLen:0, skipped:[] };
   const pct = p => (p/100)*bodyLen;            // threshold as % of body length -> distance
   let n = 0;
   const add = (severity,title,desc,point)=> out.push({ n:++n, severity, title, desc, point });
@@ -268,6 +302,29 @@ function evaluate(lm, pos){
     const near = pos==='sideR'
       ? { sh:lm[L.rSh], hip:lm[L.rHip], wr:lm[L.rWr], knee:lm[L.rKnee] }
       : { sh:lm[L.lSh], hip:lm[L.lHip], wr:lm[L.lWr], knee:lm[L.lKnee] };
+
+    // 0. Head support / pillow height — the headline neck measure.
+    // Bands (8deg/18deg) are reasonable heuristics to CALIBRATE with a chiropractor,
+    // not cited clinical cutoffs. Angle is apparent (image-plane), direction is honest.
+    const hg = headSupportGeom(lm, pos);
+    if (hg && !hg.ok){
+      skipped.push({ title:'Head support / pillow height',
+        reason:'Ear not clearly visible (often hidden by the pillow). Try the camera a touch higher or further back so the ear, shoulder and hip all show.' });
+    } else if (hg){
+      const a=hg.angle;
+      const where  = hg.dir==='toward' ? 'toward the mattress' : 'away from the mattress';
+      const pillow = hg.dir==='toward' ? 'pillow may be too low' : 'pillow may be too high';
+      if (a < 8){
+        add('educational','Head supported near neutral',
+          `Apparent neck side-bend ~${a.toFixed(0)}°. Your head is sitting close to in-line with your spine — a good reference setup to show your chiropractor.`, hg.ear);
+      } else if (a <= 18){
+        add('monitor','Mild head tilt',
+          `Head tilted ~${a.toFixed(0)}° ${where} (apparent). ${cap(pillow)}. Worth tracking — ask your chiropractor what neutral should look like for you.`, hg.ear);
+      } else {
+        add('priority','Head not supported in neutral',
+          `Head tilted ~${a.toFixed(0)}° ${where} (apparent) — the neck is side-bent through the night, which loads the neck and upper back. ${cap(pillow)}; bring this photo to your chiropractor.`, hg.ear);
+      }
+    }
 
     // 1. Shoulder protraction — near shoulder pushed forward of hip line
     if (vis(near.sh) && vis(near.hip)){
@@ -295,7 +352,7 @@ function evaluate(lm, pos){
       const diff = angleDiff(angleDeg(lm[L.lSh],lm[L.rSh]) - angleDeg(lm[L.lHip],lm[L.rHip]));
       if (diff > 12)
         add('priority','Shoulder–hip rotation',
-          `Shoulders and hips are twisted ~${diff.toFixed(0)}° apart — spinal torsion that concentrates load in the lumbar segments.`, mid(sh,hip));
+          `Shoulders and hips are twisted ~${diff.toFixed(0)}° apart — the spine is rotated, loading the mid/upper back and thoracic segments asymmetrically through the night.`, mid(sh,hip));
     }
   }
 
@@ -323,24 +380,7 @@ function evaluate(lm, pos){
       'Back-of-body view cannot see lumbar lordosis. Take a side-angle photo (Side R/L) to assess low-back support.', hip);
   }
 
-  else if (pos === 'belly'){
-    // 1. Cervical rotation — always priority in prone
-    const headTurn = vis(lm[L.nose]) ? (lm[L.nose].x - sh.x)*aspect : 0;
-    const side = headTurn>0 ? 'right' : 'left';
-    add('priority','Cervical rotation',
-      `Prone sleeping forces the head turned to one side (appears turned ${side}). Sustained cervical rotation compresses the facet joints and nerve roots.`, vis(lm[L.nose])?lm[L.nose]:sh);
-    // 2. Prone lumbar extension — educational
-    add('educational','Prone lumbar extension',
-      'Lying face-down extends the lumbar spine and anteriorly tilts the pelvis. A thin pillow under the abdomen reduces this.', hip);
-    // 3. Asymmetric arm position
-    if (vis(lm[L.lWr])&&vis(lm[L.rWr])){
-      const d = Math.abs(lm[L.lWr].y - lm[L.rWr].y);
-      if (d > pct(10)) add('monitor','Asymmetric arm position',
-        'Arms are at very different heights — typically one arm up by the head, twisting the shoulder girdle.', mid(lm[L.lWr],lm[L.rWr]));
-    }
-  }
-
-  return { findings: out, bodyLen };
+  return { findings: out, bodyLen, skipped };
 }
 
 // ---- Drawing ----
@@ -378,6 +418,19 @@ function paintPose(c, lm, findings, proj, s){
     const pn=proj(lm[L.nose]); const sm=proj(mid(lm[L.lSh],lm[L.rSh]));
     c.beginPath(); c.moveTo(pn.x,pn.y); c.lineTo(sm.x,sm.y); c.stroke();
   }
+  // head-support guide line (side positions): ear -> shoulder -> hip + apparent angle
+  const hg = headSupportGeom(lm, position);
+  if (hg && hg.ok){
+    const e=proj(hg.ear), sP=proj(hg.sh), hP=proj(hg.hip);
+    c.save();
+    c.setLineDash([6*s,5*s]); c.lineWidth=2.5*s; c.strokeStyle='rgba(56,189,248,.95)'; c.lineCap='round';
+    c.beginPath(); c.moveTo(hP.x,hP.y); c.lineTo(sP.x,sP.y); c.lineTo(e.x,e.y); c.stroke();
+    c.setLineDash([]);
+    c.fillStyle='#bfe9ff'; c.font=`bold ${12*s}px -apple-system,Segoe UI,Roboto,sans-serif`;
+    c.textAlign='left'; c.textBaseline='middle';
+    c.fillText(`${hg.angle.toFixed(0)}°`, e.x+9*s, e.y);
+    c.restore();
+  }
   // dots
   c.fillStyle = '#e7eef7';
   for (const i of DOTS){
@@ -404,25 +457,33 @@ function drawScene(lm, findings){
 }
 
 // ---- Findings list render ----
-function renderFindings(list, msg){
+function esc(s){ return String(s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function renderFindings(list, msg, skipped){
   findingsEl.innerHTML='';
   if (msg){
     const d=document.createElement('div'); d.className='card none'; d.textContent=msg;
-    findingsEl.appendChild(d); return;
-  }
-  if (!list.length){
+    findingsEl.appendChild(d);
+  } else if (!list.length){
     const d=document.createElement('div'); d.className='card none';
-    d.textContent='No pinch-points flagged for this position.'; findingsEl.appendChild(d); return;
+    d.textContent='No pinch-points flagged for this position.'; findingsEl.appendChild(d);
+  } else {
+    for (const f of list){
+      const card=document.createElement('div'); card.className='card '+
+        (f.severity==='priority'?'red':f.severity==='monitor'?'amber':'blue');
+      card.innerHTML =
+        `<div class="num">${f.n}</div><div class="body">`+
+        `<div class="sev">${esc(f.severity)}</div>`+
+        `<div class="title">${esc(f.title)}</div>`+
+        `<div class="desc">${esc(f.desc)}</div></div>`;
+      findingsEl.appendChild(card);
+    }
   }
-  for (const f of list){
-    const card=document.createElement('div'); card.className='card '+
-      (f.severity==='priority'?'red':f.severity==='monitor'?'amber':'blue');
-    card.innerHTML =
-      `<div class="num">${f.n}</div><div class="body">`+
-      `<div class="sev">${f.severity}</div>`+
-      `<div class="title">${f.title}</div>`+
-      `<div class="desc">${f.desc}</div></div>`;
-    findingsEl.appendChild(card);
+  if (skipped && skipped.length){
+    for (const sdef of skipped){
+      const card=document.createElement('div'); card.className='card none';
+      card.innerHTML = `<b>Couldn’t assess — ${esc(sdef.title)}.</b> ${esc(sdef.reason)}`;
+      findingsEl.appendChild(card);
+    }
   }
 }
 
@@ -480,14 +541,14 @@ function loop(){
     const lm = res && res.landmarks && res.landmarks[0];
     if (lm){
       hint.style.display='none';
-      const { findings } = evaluate(lm, position);
+      const { findings, skipped } = evaluate(lm, position);
       drawScene(lm, findings);
-      renderFindings(findings);
-      lastLandmarks = lm; lastFindings = findings;
+      renderFindings(findings, null, skipped);
+      lastLandmarks = lm; lastFindings = findings; lastSkipped = skipped;
     } else {
       ctx.clearRect(0,0,canvas.width,canvas.height);
       renderFindings([], 'No person detected — make sure the whole body is in frame.');
-      lastLandmarks = null; lastFindings = [];
+      lastLandmarks = null; lastFindings = []; lastSkipped = [];
     }
   }
   // FPS (EMA)
@@ -529,7 +590,7 @@ function stop(){
   hint.style.display='flex';
   hint.innerHTML='Stopped. Tap <b>&nbsp;Start&nbsp;</b> to resume.';
   renderFindings([], 'Camera stopped.');
-  lastLandmarks=null; lastFindings=[];
+  lastLandmarks=null; lastFindings=[]; lastSkipped=[];
 }
 async function switchCamera(){
   facingMode = facingMode==='environment' ? 'user' : 'environment';
@@ -581,8 +642,24 @@ function buildReportText(stamp){
   } else {
     out.push('No pinch-points flagged (or no person detected at capture).');
   }
+  // Turn findings into questions to raise at the visit (observations, not instructions).
+  out.push('');
+  out.push('DISCUSS WITH YOUR CHIROPRACTOR');
+  const talk = lastFindings.filter(f=>f.severity!=='educational');
+  if (talk.length){
+    for (const f of talk)
+      out.push(`• ${f.title}: is this loading my neck / upper back, and what should neutral look like for me?`);
+  } else {
+    out.push('• This setup looks close to neutral — is this what you want me to keep?');
+  }
+  if (lastSkipped.length){
+    out.push('');
+    out.push('COULD NOT ASSESS FROM THIS PHOTO');
+    for (const sdef of lastSkipped) out.push(`• ${sdef.title}: ${sdef.reason}`);
+  }
   out.push('');
   out.push('Severity: PRIORITY = address first · MONITOR = keep an eye on · EDUCATIONAL = context.');
+  out.push('Angles are apparent (single-photo, image-plane) and meant to be calibrated with your provider.');
   out.push('Generated by PinchPoint. Informational only — not a medical diagnosis.');
   return out.join('\n');
 }
@@ -595,8 +672,11 @@ function buildSnapshotCanvas(stamp){
   const meas=document.createElement('canvas').getContext('2d');
   meas.font=`${fs}px -apple-system,Segoe UI,Roboto,sans-serif`;
   const textW=vw-pad*2-16*s;
-  const items = lastFindings.length ? lastFindings
-    : [{severity:'none', n:'', title:'', desc:'No pinch-points flagged (or no person detected at capture).'}];
+  const items = (lastFindings.length ? lastFindings.slice()
+    : [{severity:'none', n:'', title:'', desc:'No pinch-points flagged (or no person detected at capture).'}]);
+  for (const sdef of lastSkipped)
+    items.push({severity:'none', n:'', title:'', desc:`Not assessed — ${sdef.title}: ${sdef.reason}`});
+  items.push({severity:'none', n:'', title:'', desc:'Questions to ask your chiropractor are in the shared report text.'});
   let rows=0;
   const wrapped=items.map(f=>{
     const label=f.n ? `#${f.n} ${(f.severity||'').toUpperCase()} — ${f.title}: ${f.desc}` : f.desc;
@@ -701,8 +781,11 @@ posWrap.addEventListener('click', e=>{
   const b = e.target.closest('button[data-pos]'); if(!b) return;
   position = b.dataset.pos;
   [...posWrap.children].forEach(c=>c.classList.toggle('active', c===b));
+  updateTip();
 });
+function updateTip(){ tipEl.textContent = POS_TIP[position] || ''; }
 window.addEventListener('resize', ()=>{ if (video.videoWidth) resizeCanvas(); });
+updateTip();
 renderFindings([], 'Choose a position and tap Start.');
 </script>
 </body>
