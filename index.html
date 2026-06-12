@@ -263,8 +263,11 @@ let lastVideoTime = -1;
 let fpsEma = 0;
 let lastFrameT = 0;
 let lastLandmarks = null;   // cached for capture (outside the render loop)
+let lastWorld = null;       // matching 3D world landmarks (depth-aware)
 let lastFindings = [];
 let lastSkipped = [];
+const lmBuffer = [];        // ring buffer of recent {lm, world} for capture-time averaging
+const LM_BUFFER_MAX = 5;
 // session: one captured result per position (in memory only). Each =
 // { position, stamp, blob, url, filename, report }
 const session = { sideR:null, sideL:null, back:null };
@@ -278,18 +281,25 @@ const POS_TIP = {
 
 // ---- Landmark indices (MediaPipe Pose, 33 pts) ----
 const L = {
-  nose:0, lEye:2, rEye:5, lEar:7, rEar:8,
-  lSh:11, rSh:12, lEl:13, rEl:14, lWr:15, rWr:16,
-  lHip:23, rHip:24, lKnee:25, rKnee:26, lAnk:27, rAnk:28
+  nose:0, lEye:2, rEye:5, lEar:7, rEar:8, mouthL:9, mouthR:10,
+  lSh:11, rSh:12, lEl:13, rEl:14, lWr:15, rWr:16, lIndex:19, rIndex:20,
+  lHip:23, rHip:24, lKnee:25, rKnee:26, lAnk:27, rAnk:28,
+  lHeel:29, rHeel:30, lFoot:31, rFoot:32
 };
 // Skeleton connections (index pairs)
 const BONES = [
   [L.lSh,L.rSh],[L.lHip,L.rHip],[L.lSh,L.lHip],[L.rSh,L.rHip],
   [L.lSh,L.lEl],[L.lEl,L.lWr],[L.rSh,L.rEl],[L.rEl,L.rWr],
-  [L.lHip,L.lKnee],[L.lKnee,L.lAnk],[L.rHip,L.rKnee],[L.rKnee,L.rAnk]
+  [L.lWr,L.lIndex],[L.rWr,L.rIndex],
+  [L.lHip,L.lKnee],[L.lKnee,L.lAnk],[L.rHip,L.rKnee],[L.rKnee,L.rAnk],
+  [L.lAnk,L.lHeel],[L.lHeel,L.lFoot],[L.lAnk,L.lFoot],
+  [L.rAnk,L.rHeel],[L.rHeel,L.rFoot],[L.rAnk,L.rFoot]
 ];
-const DOTS = [L.nose,L.lSh,L.rSh,L.lEl,L.rEl,L.lWr,L.rWr,L.lHip,L.rHip,L.lKnee,L.rKnee,L.lAnk,L.rAnk];
+const DOTS = [L.nose,L.lEye,L.rEye,L.mouthL,L.mouthR,
+  L.lSh,L.rSh,L.lEl,L.rEl,L.lWr,L.rWr,L.lIndex,L.rIndex,
+  L.lHip,L.rHip,L.lKnee,L.rKnee,L.lAnk,L.rAnk,L.lHeel,L.rHeel,L.lFoot,L.rFoot];
 const SEV_COLOR = { priority:'#ef4444', monitor:'#f59e0b', educational:'#38bdf8' };
+const REF_COLOR = '#8aa0b6';   // muted style for derived reference points (not detected anatomy)
 
 // ---- Secure-context check ----
 function isSecure(){
@@ -322,16 +332,16 @@ function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
 // eye/nose centroid only if both ears are hidden. Used by BOTH evaluate() and paintPose() so
 // the live view and the captured image agree. Returns {ok:false} only when the head isn't in
 // frame at all or the trunk midline is missing — so we rarely skip, and never fabricate.
-function headSupportGeom(lm, pos){
+function headSupportGeom(lm, world, pos){
   if (!lm || (pos!=='sideR' && pos!=='sideL')) return null;
   const shM = mid(lm[L.lSh],lm[L.rSh]);
   const hipM = mid(lm[L.lHip],lm[L.rHip]);
   if (!vis(shM,0.5) || !vis(hipM,0.5)) return { ok:false };
   // head point = most-visible ear; fallback to eye/nose centroid if both ears hidden
-  let head=null, headSource='ear';
+  let head=null, headSource='ear', headIdx=null;
   const lE=lm[L.lEar], rE=lm[L.rEar];
   const lV=(lE&&lE.visibility)||0, rV=(rE&&rE.visibility)||0;
-  if (Math.max(lV,rV) >= 0.5){ head = (rV>=lV) ? rE : lE; }
+  if (Math.max(lV,rV) >= 0.5){ headIdx = (rV>=lV) ? L.rEar : L.lEar; head = lm[headIdx]; }
   else {
     const face=[lm[L.lEye],lm[L.rEye],lm[L.nose]].filter(p=>vis(p,0.5));
     if (face.length){ head={ x:face.reduce((s,p)=>s+p.x,0)/face.length,
@@ -343,23 +353,50 @@ function headSupportGeom(lm, pos){
   const sLen=Math.hypot(spine.x,spine.y), nLen=Math.hypot(neck.x,neck.y);
   if (sLen<1e-4 || nLen<1e-4) return { ok:false };
   let c=(spine.x*neck.x+spine.y*neck.y)/(sLen*nLen); c=Math.max(-1,Math.min(1,c));
-  const angle=Math.acos(c)*180/Math.PI;                 // deviation off the straight spine line (0 = collinear)
+  let angle=Math.acos(c)*180/Math.PI;                   // apparent (2D image-plane) deviation off the spine line
+  let is3D=false;
+  // 3D angle from world landmarks (metric, depth-aware) — more robust to camera perspective.
+  // Only when the head came from a real ear landmark (world index known); else keep the 2D estimate.
+  if (world && headIdx!=null && world[L.lSh] && world[L.rSh] && world[L.lHip] && world[L.rHip] && world[headIdx]){
+    const w3 = (i,j)=>({ x:(world[i].x+world[j].x)/2, y:(world[i].y+world[j].y)/2, z:(world[i].z+world[j].z)/2 });
+    const Wsh=w3(L.lSh,L.rSh), Whip=w3(L.lHip,L.rHip), Wh=world[headIdx];
+    const sp={x:Wsh.x-Whip.x,y:Wsh.y-Whip.y,z:Wsh.z-Whip.z};
+    const nk={x:Wh.x-Wsh.x,y:Wh.y-Wsh.y,z:Wh.z-Wsh.z};
+    const sm=Math.hypot(sp.x,sp.y,sp.z), nm=Math.hypot(nk.x,nk.y,nk.z);
+    if (sm>1e-6 && nm>1e-6){
+      let c3=(sp.x*nk.x+sp.y*nk.y+sp.z*nk.z)/(sm*nm); c3=Math.max(-1,Math.min(1,c3));
+      angle=Math.acos(c3)*180/Math.PI; is3D=true;
+    }
+  }
   // neutral head position: shoulder-mid + (head distance) along the straight spine direction
   const ux=spine.x/sLen, uy=spine.y/sLen;
   const neutral = { x: shM.x + (ux/aspect)*nLen, y: shM.y + uy*nLen };
   const dir = (head.y > neutral.y) ? 'toward' : 'away';  // lower in image = toward mattress
-  return { ok:true, head, headSource, sh:shM, hip:hipM, neutral, angle, dir };
+  // derived draw-only reference points (estimates, not detected anatomy)
+  const neckPt = { x:(head.x+shM.x)/2, y:(head.y+shM.y)/2 };          // C7-ish neck reference
+  const headTop = { x: head.x + (head.x-shM.x)*0.3, y: head.y + (head.y-shM.y)*0.3 }; // estimated crown
+  return { ok:true, head, headSource, sh:shM, hip:hipM, neutral, angle, is3D, dir, neckPt, headTop };
+}
+// Interpolated reference points along the shoulder-mid -> hip-mid axis. VISUAL ONLY: a straight-line
+// interpolation can't reveal true spinal curvature (Pose has no landmarks between shoulders and hips).
+function trunkRefs(lm){
+  const shM = mid(lm[L.lSh],lm[L.rSh]);
+  const hipM = mid(lm[L.lHip],lm[L.rHip]);
+  if (!vis(shM,0.5) || !vis(hipM,0.5)) return { ok:false };
+  const at = t => ({ x: shM.x+(hipM.x-shM.x)*t, y: shM.y+(hipM.y-shM.y)*t });
+  return { ok:true, pts:[ at(1/3), at(2/3) ] };
 }
 
 // ---- Rule evaluation ----
 // returns { findings:[{n,severity,title,desc,point}], bodyLen }
-function evaluate(lm, pos){
+function evaluate(lm, world, pos){
   const out = [];
   const skipped = [];                          // assessments we couldn't make from this frame
   const sh = mid(lm[L.lSh],lm[L.rSh]);
   const hip = mid(lm[L.lHip],lm[L.rHip]);
   const ank = mid(lm[L.lAnk],lm[L.rAnk]);
-  const bodyLen = dist(sh,hip) + dist(hip,ank);
+  const torso = dist(sh,hip);                  // shoulder-mid -> hip-mid, a stable local scale
+  const bodyLen = torso + dist(hip,ank);
   if (!isFinite(bodyLen) || bodyLen < 1e-3) return { findings:[], bodyLen:0, skipped:[] };
   const pct = p => (p/100)*bodyLen;            // threshold as % of body length -> distance
   let n = 0;
@@ -373,24 +410,49 @@ function evaluate(lm, pos){
 
     // 0. Head support / pillow height — the headline neck measure.
     // Bands (8deg/18deg) are reasonable heuristics to CALIBRATE with a chiropractor,
-    // not cited clinical cutoffs. Angle is apparent (image-plane), direction is honest.
-    const hg = headSupportGeom(lm, pos);
+    // not cited clinical cutoffs. Angle is 3D (world landmarks) when available, else apparent 2D.
+    const hg = headSupportGeom(lm, world, pos);
     if (hg && !hg.ok){
       skipped.push({ title:'Head support / pillow height',
         reason:'Head or torso not fully in frame. Capture from the head to the hips so the spine line and the up-facing ear both show.' });
     } else if (hg){
       const a=hg.angle;
+      const basis = hg.is3D ? '3D estimate' : 'apparent';
       const where  = hg.dir==='toward' ? 'toward the mattress' : 'away from the mattress';
       const pillow = hg.dir==='toward' ? 'pillow may be too low' : 'pillow may be too high';
       if (a < 8){
         add('educational','Head supported near neutral',
-          `Head sits ~${a.toFixed(0)}° off the straight spine line — close to in-line with your spine. A good reference setup to show your chiropractor.`, hg.head);
+          `Head sits ~${a.toFixed(0)}° off the straight spine line (${basis}) — close to in-line with your spine. A good reference setup to show your chiropractor.`, hg.head);
       } else if (a <= 18){
         add('monitor','Mild head tilt',
-          `Head ~${a.toFixed(0)}° off the straight spine line, ${where} (apparent). ${cap(pillow)}. Worth tracking — ask your chiropractor what neutral should look like for you.`, hg.head);
+          `Head ~${a.toFixed(0)}° off the straight spine line, ${where} (${basis}). ${cap(pillow)}. Worth tracking — ask your chiropractor what neutral should look like for you.`, hg.head);
       } else {
         add('priority','Head not supported in neutral',
-          `Head ~${a.toFixed(0)}° off the straight spine line, ${where} (apparent) — the neck is side-bent through the night, which loads the neck and upper back. ${cap(pillow)}; bring this photo to your chiropractor.`, hg.head);
+          `Head ~${a.toFixed(0)}° off the straight spine line, ${where} (${basis}) — the neck is side-bent through the night, which loads the neck and upper back. ${cap(pillow)}; bring this photo to your chiropractor.`, hg.head);
+      }
+
+      // 0b. Forward-head / cranio-vertebral offset — ear sitting forward of the shoulder (apparent 2D).
+      // Distinct from the head-support angle above. Bands (% of torso length) are heuristics to calibrate.
+      if (vis(near.sh)){
+        const fwd = Math.abs(hg.head.x - near.sh.x)*aspect;
+        const fp = torso>1e-4 ? fwd/torso*100 : 0;
+        if (fp >= 10){
+          add(fp>22?'priority':'monitor','Forward-head offset',
+            `Up-facing ear sits ~${fp.toFixed(0)}% of torso length forward of the shoulder (apparent) — a forward-head pattern that loads the lower neck. Ask your chiropractor whether your head should sit further back.`, hg.head);
+        }
+      } else {
+        skipped.push({ title:'Forward-head offset', reason:'Near shoulder not clearly in frame — capture the head and shoulder together from the side.' });
+      }
+
+      // 0c. Head pitch / chin position — nose relative to the up-facing ear (apparent 2D).
+      if (vis(lm[L.nose],0.5)){
+        const dv = (lm[L.nose].y - hg.head.y);                 // +ve = nose lower in image than ear
+        const cp = torso>1e-4 ? Math.abs(dv)/torso*100 : 0;
+        const chin = dv > 0 ? 'chin tucked toward the chest' : 'chin lifted away from the chest';
+        if (cp >= 12){
+          add(cp>25?'priority':'monitor','Head pitch / chin position',
+            `Nose sits ~${cp.toFixed(0)}% of torso length ${dv>0?'below':'above'} the ear (apparent) — ${chin}. Ask your chiropractor what head tilt they'd want overnight.`, lm[L.nose]);
+        }
       }
     }
 
@@ -472,7 +534,7 @@ function project(p){
 }
 // Shared pose painter: draws bones, dots, and numbered pinch-point markers onto any
 // context `c`, using projection `proj` (normalized -> px) and size scale `s`.
-function paintPose(c, lm, findings, proj, s){
+function paintPose(c, lm, findings, proj, s, world){
   if (!lm) return;
   // bones
   c.lineWidth = 3*s; c.strokeStyle = 'rgba(99,179,237,.9)'; c.lineCap='round';
@@ -486,9 +548,21 @@ function paintPose(c, lm, findings, proj, s){
     const pn=proj(lm[L.nose]); const sm=proj(mid(lm[L.lSh],lm[L.rSh]));
     c.beginPath(); c.moveTo(pn.x,pn.y); c.lineTo(sm.x,sm.y); c.stroke();
   }
-  // head-support guide (side positions): straight spine line (hip-mid->shoulder-mid) with a
-  // dashed "neutral" extension, the visible ear as its own point, and the angle between them.
-  const hg = headSupportGeom(lm, position);
+  // derived trunk reference points (visual only — straight-line interpolation, not curvature)
+  const tr = trunkRefs(lm);
+  if (tr && tr.ok){
+    c.save();
+    for (const p of tr.pts){
+      const q=proj(p);
+      c.beginPath(); c.arc(q.x,q.y,3.5*s,0,Math.PI*2);
+      c.fillStyle='rgba(138,160,182,.18)'; c.fill();
+      c.lineWidth=1.5*s; c.strokeStyle=REF_COLOR; c.stroke();
+    }
+    c.restore();
+  }
+  // head-support guide (side positions): spine line (hip-mid->shoulder-mid), dashed "neutral"
+  // extension, the visible ear as its own point, derived neck/head-top refs, and the angle.
+  const hg = headSupportGeom(lm, world, position);
   if (hg && hg.ok){
     const hd=proj(hg.head), sP=proj(hg.sh), hP=proj(hg.hip), nt=proj(hg.neutral);
     c.save();
@@ -508,10 +582,17 @@ function paintPose(c, lm, findings, proj, s){
     c.beginPath(); c.arc(hd.x,hd.y,6*s,0,Math.PI*2);
     c.fillStyle = off ? 'rgba(245,158,11,.35)' : 'rgba(56,189,248,.35)'; c.fill();
     c.lineWidth=2.5*s; c.strokeStyle = off ? '#f59e0b' : '#38bdf8'; c.stroke();
-    // 3. angle label
+    // 3. derived neck + head-top reference markers (muted; estimates, not detected anatomy)
+    for (const rp of [hg.neckPt, hg.headTop]){
+      const q=proj(rp);
+      c.beginPath(); c.arc(q.x,q.y,3.5*s,0,Math.PI*2);
+      c.fillStyle='rgba(138,160,182,.18)'; c.fill();
+      c.lineWidth=1.5*s; c.strokeStyle=REF_COLOR; c.stroke();
+    }
+    // 4. angle label (notes 3D vs apparent basis)
     c.fillStyle = off ? '#ffd9a8' : '#bfe9ff'; c.font=`bold ${12*s}px -apple-system,Segoe UI,Roboto,sans-serif`;
     c.textAlign='left'; c.textBaseline='middle';
-    c.fillText(`${hg.angle.toFixed(0)}°`, hd.x+10*s, hd.y);
+    c.fillText(`${hg.angle.toFixed(0)}°${hg.is3D?' 3D':''}`, hd.x+10*s, hd.y);
     c.restore();
   }
   // dots
@@ -534,9 +615,9 @@ function paintPose(c, lm, findings, proj, s){
     c.fillStyle='#fff'; c.fillText(String(f.n), p.x, p.y+0.5*s);
   }
 }
-function drawScene(lm, findings){
+function drawScene(lm, findings, world){
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  paintPose(ctx, lm, findings, project, window.devicePixelRatio || 1);
+  paintPose(ctx, lm, findings, project, window.devicePixelRatio || 1, world);
 }
 
 // ---- Findings list render ----
@@ -578,7 +659,7 @@ async function ensureModel(){
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
   landmarker = await PoseLandmarker.createFromOptions(fileset, {
     baseOptions:{
-      modelAssetPath:"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+      modelAssetPath:"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task",
       delegate:"GPU"
     },
     runningMode:"VIDEO",
@@ -622,16 +703,19 @@ function loop(){
     let res=null;
     try { res = landmarker.detectForVideo(video, now); } catch(e){ /* transient */ }
     const lm = res && res.landmarks && res.landmarks[0];
+    const world = res && res.worldLandmarks && res.worldLandmarks[0];
     if (lm){
       hint.style.display='none';
-      const { findings, skipped } = evaluate(lm, position);
-      drawScene(lm, findings);
+      const { findings, skipped } = evaluate(lm, world, position);
+      drawScene(lm, findings, world);
       renderFindings(findings, null, skipped);
-      lastLandmarks = lm; lastFindings = findings; lastSkipped = skipped;
+      lastLandmarks = lm; lastWorld = world; lastFindings = findings; lastSkipped = skipped;
+      lmBuffer.push({ lm, world }); if (lmBuffer.length>LM_BUFFER_MAX) lmBuffer.shift();
     } else {
       ctx.clearRect(0,0,canvas.width,canvas.height);
       renderFindings([], 'No person detected — make sure the whole body is in frame.');
-      lastLandmarks = null; lastFindings = []; lastSkipped = [];
+      lastLandmarks = null; lastWorld = null; lastFindings = []; lastSkipped = [];
+      lmBuffer.length = 0;
     }
   }
   // FPS (EMA)
@@ -743,7 +827,8 @@ function buildReportText(stamp){
   }
   out.push('');
   out.push('Severity: PRIORITY = address first · MONITOR = keep an eye on · EDUCATIONAL = context.');
-  out.push('Angles are apparent (single-photo, image-plane) and meant to be calibrated with your provider.');
+  out.push('The head-support angle uses 3D landmarks (single-camera estimate); offset measures are apparent');
+  out.push('(image-plane). All thresholds are heuristics meant to be calibrated with your provider.');
   out.push('Generated by PinchPoint. Informational only — not a medical diagnosis.');
   return out.join('\n');
 }
@@ -779,7 +864,7 @@ function buildSnapshotCanvas(stamp){
   c.restore();
   // pose overlay projected onto the full frame
   const projFull = p => ({ x:(mirror?1-p.x:p.x)*vw, y:p.y*vh });
-  paintPose(c, lastLandmarks, lastFindings, projFull, s);
+  paintPose(c, lastLandmarks, lastFindings, projFull, s, lastWorld);
 
   // footer report band
   c.textAlign='left'; c.textBaseline='alphabetic';
@@ -860,8 +945,34 @@ function startTimedCapture(){
 }
 countdownEl.addEventListener('click', cancelCountdown);
 
+// Visibility-weighted average of the buffered frames → a stabilized landmark/world set for capture.
+function averageFrames(buf){
+  if (!buf.length) return null;
+  const n = buf[0].lm.length;
+  const hasWorld = buf.every(f=>f.world && f.world.length===n);
+  const lm = new Array(n), world = hasWorld ? new Array(n) : null;
+  for (let i=0;i<n;i++){
+    let x=0,y=0,visSum=0,wSum=0;
+    let X=0,Y=0,Z=0,wwSum=0;
+    for (const f of buf){
+      const p=f.lm[i]; const w=(p.visibility==null?1:p.visibility);
+      x+=p.x*w; y+=p.y*w; wSum+=w; visSum+=(p.visibility==null?1:p.visibility);
+      if (hasWorld){ const wp=f.world[i]; X+=wp.x*w; Y+=wp.y*w; Z+=wp.z*w; wwSum+=w; }
+    }
+    const last=buf[buf.length-1];
+    lm[i] = wSum>0 ? { x:x/wSum, y:y/wSum, visibility:visSum/buf.length } : { ...last.lm[i] };
+    if (hasWorld) world[i] = wwSum>0 ? { x:X/wwSum, y:Y/wwSum, z:Z/wwSum } : { ...last.world[i] };
+  }
+  return { lm, world };
+}
 function captureCurrent(){
   const pos=position;
+  // Use the averaged buffer (steadier numbers) for the saved snapshot + report.
+  const avg = averageFrames(lmBuffer);
+  if (avg){
+    const { findings, skipped } = evaluate(avg.lm, avg.world, pos);
+    lastLandmarks = avg.lm; lastWorld = avg.world; lastFindings = findings; lastSkipped = skipped;
+  }
   const stamp=nowStamp();
   const report=buildReportText(stamp);
   const cv=buildSnapshotCanvas(stamp);
