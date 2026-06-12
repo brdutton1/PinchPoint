@@ -206,7 +206,7 @@
       <div class="sub" id="capSub">Annotated snapshots + findings report.</div>
       <div class="thumbs" id="capThumbs"></div>
       <div class="acts">
-        <button id="shareBtn" class="primary">📤 Send images + report</button>
+        <button id="shareBtn" class="primary">✉️ Email photos to chiropractor</button>
         <button id="downloadBtn">Save images</button>
         <button id="emailBtn" class="ghost">Email text only</button>
         <button id="closeCapBtn" class="ghost">Close</button>
@@ -1017,9 +1017,12 @@ function openReview(){
   capSub.textContent = `${caps.length} position${caps.length>1?'s':''} ready to send.`;
   capReport.value = buildCombinedReport();
   const canShareFiles=fileShareSupported();
+  // Phones: the share path is the only one that attaches the photos — make it the single primary
+  // action and hide the text-only mailto button so it can't be tapped by mistake.
   shareBtn.style.display = canShareFiles ? '' : 'none';
+  emailBtn.style.display = canShareFiles ? 'none' : '';
   capNote.textContent = canShareFiles
-    ? 'On your phone, tap “Send images + report”, then pick Mail or Messages — the images and report go to your chiropractor together. (“Email text only” sends the words without pictures.)'
+    ? 'Tap “Email photos to chiropractor”, then choose Mail — your mail app opens with the photos already attached and the report in the body. Just type your chiropractor’s address and send.'
     : 'On this device: tap “Save images” to download them, then attach them to an email. “Email text only” pre-fills the report words without pictures.';
   capturePanel.classList.add('show');
 }
