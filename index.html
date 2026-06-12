@@ -206,9 +206,9 @@
       <div class="sub" id="capSub">Annotated snapshots + findings report.</div>
       <div class="thumbs" id="capThumbs"></div>
       <div class="acts">
-        <button id="shareBtn" class="primary">Share all…</button>
-        <button id="downloadBtn">Download all</button>
-        <button id="emailBtn">Email report</button>
+        <button id="shareBtn" class="primary">📤 Send images + report</button>
+        <button id="downloadBtn">Save images</button>
+        <button id="emailBtn" class="ghost">Email text only</button>
         <button id="closeCapBtn" class="ghost">Close</button>
         <button id="startOverBtn" class="ghost">Start over</button>
       </div>
@@ -1019,8 +1019,8 @@ function openReview(){
   const canShareFiles=fileShareSupported();
   shareBtn.style.display = canShareFiles ? '' : 'none';
   capNote.textContent = canShareFiles
-    ? 'Share all opens your phone’s share sheet — pick Mail or Messages to send every image to your chiropractor at once.'
-    : 'On this device: Download all to save the images, then attach them to an email. Email pre-fills the report text.';
+    ? 'On your phone, tap “Send images + report”, then pick Mail or Messages — the images and report go to your chiropractor together. (“Email text only” sends the words without pictures.)'
+    : 'On this device: tap “Save images” to download them, then attach them to an email. “Email text only” pre-fills the report words without pictures.';
   capturePanel.classList.add('show');
 }
 function closeReview(){ capturePanel.classList.remove('show'); }
@@ -1046,7 +1046,8 @@ function downloadSession(){
 }
 function emailSession(){
   const subject=encodeURIComponent('PinchPoint sleep posture findings');
-  const body=encodeURIComponent(capReport.value+'\n\n(Please find the annotated images attached.)');
+  // mailto can't carry images — send the report text only, and point them to the image path.
+  const body=encodeURIComponent(capReport.value+'\n\n(Report text only. The annotated images are sent with the “Send images + report” button on a phone.)');
   window.location.href=`mailto:?subject=${subject}&body=${body}`;
 }
 function clearSession(){
