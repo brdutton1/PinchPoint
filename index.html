@@ -1112,7 +1112,7 @@ posWrap.addEventListener('click', e=>{
 });
 function updateTip(){
   tipEl.textContent = (POS_TIP[position] || '') +
-    ' Tip: tap Switch camera to use the front camera so you can see yourself, then tap Capture — a 5-second timer gives you time to get still, and each second the screen flashes and (on the back camera) the phone\'s light blinks so you can see the count from across the room.';
+    ' Tip: tap Switch camera to use the front camera so you can see yourself, then tap Capture — a 5-second timer gives you time to get still, and the screen flashes each second so you can see the count from across the room.';
 }
 window.addEventListener('resize', ()=>{ if (video.videoWidth) resizeCanvas(); });
 updateTip();
