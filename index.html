@@ -39,6 +39,7 @@
   .seg button{flex:1;border:0;background:transparent;color:var(--muted);
     font-size:13px;font-weight:600;padding:9px 6px;border-radius:8px;cursor:pointer;transition:.15s}
   .seg button.active{background:var(--accent);color:#fff;box-shadow:0 1px 6px rgba(59,130,246,.5)}
+  .seg button.done::after{content:" ✓";color:#34d399;font-weight:800}
   .ctrls{display:flex;gap:8px}
   .ctrls button{flex:1;border:1px solid var(--line);background:var(--panel2);
     color:var(--text);font-size:14px;font-weight:600;padding:11px 8px;border-radius:10px;cursor:pointer}
@@ -53,6 +54,11 @@
   .stage canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
   .stage .hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     color:var(--muted);font-size:14px;text-align:center;padding:20px}
+  .stage .countdown{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    background:rgba(2,6,12,.45);color:#fff;font-size:38vw;font-weight:800;
+    text-shadow:0 2px 24px rgba(0,0,0,.6);z-index:3;cursor:pointer}
+  .stage .countdown.show{display:flex}
+  @media (min-width:520px){ .stage .countdown{font-size:180px} }
 
   .legend{display:flex;gap:14px;flex-wrap:wrap;padding:10px 16px 0;color:var(--muted);font-size:12px}
   .legend span{display:inline-flex;align-items:center;gap:6px}
@@ -74,6 +80,64 @@
   .card.blue{border-left-color:var(--blue)} .card.blue .num{background:var(--blue)} .card.blue .sev{color:var(--blue)}
   .card.none{border-left-color:var(--line);color:var(--muted);font-size:13px}
   footer{padding:0 16px 28px;color:var(--muted);font-size:11px;line-height:1.5}
+
+  .tip{margin:8px 16px 0;padding:8px 12px;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;color:var(--muted);font-size:12px;line-height:1.4}
+  .capture{padding:8px 14px 0;display:flex;flex-direction:column;gap:8px}
+  .capture button{width:100%;border:1px solid var(--accent);background:var(--accent);
+    color:#fff;font-size:15px;font-weight:700;padding:13px 8px;border-radius:12px;cursor:pointer;
+    box-shadow:0 2px 10px rgba(59,130,246,.4)}
+  .capture button:active{transform:translateY(1px)}
+  .capture button:disabled{opacity:.4;cursor:not-allowed;box-shadow:none}
+  .capture button.review{background:var(--panel2);border-color:var(--line);color:var(--text);box-shadow:none}
+  .capture button.review:not(:disabled){border-color:#34d399;color:#d8fbe9}
+  .tracker{margin:6px 16px 0;color:var(--muted);font-size:12px}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(8px);
+    background:#13351f;border:1px solid #2f7d52;color:#d8fbe9;padding:10px 16px;border-radius:999px;
+    font-size:13px;font-weight:600;opacity:0;transition:.25s;z-index:60;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  .modal{position:fixed;inset:0;z-index:50;background:rgba(2,6,12,.86);
+    display:none;align-items:flex-start;justify-content:center;overflow-y:auto;padding:16px}
+  .modal.show{display:flex}
+  .sheet{width:100%;max-width:520px;background:var(--panel);border:1px solid var(--line);
+    border-radius:16px;padding:14px;margin:auto;display:flex;flex-direction:column;gap:12px}
+  .sheet h3{margin:0;font-size:16px}
+  .sheet .sub{color:var(--muted);font-size:12px;margin-top:-6px}
+  .sheet img{width:100%;border-radius:10px;border:1px solid var(--line);background:#000;display:block}
+  .thumbs{display:flex;flex-direction:column;gap:10px}
+  .thumb{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#000}
+  .thumb .lbl{padding:6px 10px;font-size:12px;font-weight:700;color:var(--text);background:var(--panel2)}
+  .thumb img{border:0;border-radius:0}
+  .sheet textarea{width:100%;min-height:96px;resize:vertical;background:var(--bg);
+    color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px;
+    font-size:12px;line-height:1.4;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .acts button{border:1px solid var(--line);background:var(--panel2);color:var(--text);
+    font-size:14px;font-weight:600;padding:12px 8px;border-radius:10px;cursor:pointer}
+  .acts button:active{transform:translateY(1px)}
+  .acts button.primary{grid-column:1 / -1;background:var(--accent);border-color:var(--accent)}
+  .acts button.ghost{background:transparent}
+  .modal .note{color:var(--muted);font-size:11px;line-height:1.45}
+
+  /* ---- Phone landscape: video fills the height on the left, controls + findings
+         scroll in a column on the right, so nothing gets pushed off-screen ---- */
+  @media (orientation:landscape) and (max-height:600px){
+    body{height:100dvh;overflow:hidden}
+    header{padding:6px 14px}
+    .work{flex:1;min-height:0;display:flex;flex-direction:row;gap:8px;padding:8px 10px}
+    .stage{margin:0;height:100%;flex:1 1 58%;aspect-ratio:auto;border-radius:12px}
+    .side{flex:1 1 42%;height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;
+      display:flex;flex-direction:column;gap:8px;padding-right:2px}
+    .side .bar{padding:0}
+    .side .capture{padding:0}
+    .side .tip{margin:0}
+    .side .tracker{margin:2px 2px 0}
+    .side .legend{padding:2px 0 0}
+    .side .findings{padding:0 0 10px}
+    .side .findings h2{margin:4px 2px 2px}
+    footer{display:none}
+  }
 </style>
 </head>
 <body>
@@ -81,48 +145,79 @@
     <div class="brand">
       <span class="dot"></span>
       <h1>PinchPoint</h1>
-      <small>live posture pinch-points</small>
+      <small>side-sleep alignment for your provider</small>
     </div>
     <div class="fps">FPS <b id="fps">--</b></div>
   </header>
 
   <div id="banner" class="banner"></div>
 
-  <div class="bar">
-    <div class="seg" id="positions">
-      <button data-pos="sideR" class="active">Side R</button>
-      <button data-pos="sideL">Side L</button>
-      <button data-pos="back">Back</button>
-      <button data-pos="belly">Belly</button>
+  <div class="work">
+    <div class="stage">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="overlay"></canvas>
+      <div class="hint" id="hint">Tap <b>&nbsp;Start&nbsp;</b> to begin. Allow camera access when prompted.</div>
+      <div class="countdown" id="countdown"></div>
     </div>
-    <div class="ctrls">
-      <button id="startBtn" class="primary">Start</button>
-      <button id="stopBtn" class="danger" disabled>Stop</button>
-      <button id="switchBtn">Switch camera</button>
+
+    <div class="side">
+      <div class="bar">
+        <div class="seg" id="positions">
+          <button data-pos="sideR" class="active">Side R</button>
+          <button data-pos="sideL">Side L</button>
+          <button data-pos="back">Back</button>
+        </div>
+        <div class="ctrls">
+          <button id="startBtn" class="primary">Start</button>
+          <button id="stopBtn" class="danger" disabled>Stop</button>
+          <button id="switchBtn">Switch camera</button>
+        </div>
+      </div>
+
+      <div class="capture">
+        <button id="captureBtn" disabled>📷 Capture (3s timer)</button>
+        <button id="reviewBtn" class="review" disabled>Send to chiropractor</button>
+      </div>
+
+      <p class="tip" id="tip"></p>
+      <p class="tracker" id="tracker"></p>
+
+      <div class="legend">
+        <span><i class="red"></i>Priority</span>
+        <span><i class="amber"></i>Monitor</span>
+        <span><i class="blue"></i>Educational</span>
+      </div>
+
+      <div class="findings">
+        <h2>Findings</h2>
+        <div id="findings"></div>
+      </div>
     </div>
-  </div>
-
-  <div class="stage">
-    <video id="video" autoplay playsinline muted></video>
-    <canvas id="overlay"></canvas>
-    <div class="hint" id="hint">Tap <b>&nbsp;Start&nbsp;</b> to begin. Allow camera access when prompted.</div>
-  </div>
-
-  <div class="legend">
-    <span><i class="red"></i>Priority</span>
-    <span><i class="amber"></i>Monitor</span>
-    <span><i class="blue"></i>Educational</span>
-  </div>
-
-  <div class="findings">
-    <h2>Findings</h2>
-    <div id="findings"></div>
   </div>
 
   <footer>
     PinchPoint runs entirely in your browser. No video leaves your device. Estimates are
     informational only and not medical advice.
   </footer>
+
+  <div id="capturePanel" class="modal" role="dialog" aria-modal="true">
+    <div class="sheet">
+      <h3>Send to your chiropractor</h3>
+      <div class="sub" id="capSub">Annotated snapshots + findings report.</div>
+      <div class="thumbs" id="capThumbs"></div>
+      <div class="acts">
+        <button id="shareBtn" class="primary">✉️ Email photos to chiropractor</button>
+        <button id="downloadBtn">Save images</button>
+        <button id="emailBtn" class="ghost">Email text only</button>
+        <button id="closeCapBtn" class="ghost">Close</button>
+        <button id="startOverBtn" class="ghost">Start over</button>
+      </div>
+      <div class="note" id="capNote"></div>
+      <textarea id="capReport" readonly></textarea>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
 
 <script type="module">
 import { FilesetResolver, PoseLandmarker }
@@ -140,6 +235,22 @@ const stopBtn = document.getElementById('stopBtn');
 const switchBtn=document.getElementById('switchBtn');
 const findingsEl = document.getElementById('findings');
 const posWrap = document.getElementById('positions');
+const captureBtn = document.getElementById('captureBtn');
+const reviewBtn = document.getElementById('reviewBtn');
+const tipEl = document.getElementById('tip');
+const trackerEl = document.getElementById('tracker');
+const countdownEl = document.getElementById('countdown');
+const toastEl = document.getElementById('toast');
+const capturePanel = document.getElementById('capturePanel');
+const capThumbs = document.getElementById('capThumbs');
+const capSub = document.getElementById('capSub');
+const capReport = document.getElementById('capReport');
+const capNote = document.getElementById('capNote');
+const shareBtn = document.getElementById('shareBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+const emailBtn = document.getElementById('emailBtn');
+const closeCapBtn = document.getElementById('closeCapBtn');
+const startOverBtn = document.getElementById('startOverBtn');
 
 // ---- State ----
 let landmarker = null;
@@ -151,21 +262,44 @@ let position = 'sideR';
 let lastVideoTime = -1;
 let fpsEma = 0;
 let lastFrameT = 0;
+let lastLandmarks = null;   // cached for capture (outside the render loop)
+let lastWorld = null;       // matching 3D world landmarks (depth-aware)
+let lastFindings = [];
+let lastSkipped = [];
+const lmBuffer = [];        // ring buffer of recent {lm, world} for capture-time averaging
+const LM_BUFFER_MAX = 5;
+// session: one captured result per position (in memory only). Each =
+// { position, stamp, blob, url, filename, report }
+const session = { sideR:null, sideL:null, back:null };
+let countdownTimer = null;  // active self-timer handle
+const POS_LABEL = { sideR:'Side (right)', sideL:'Side (left)', back:'Back' };
+const POS_TIP = {
+  sideR:'Stand 6–8 ft away, camera at bed height. Capture the whole body, ear to feet, in your natural side-sleep position.',
+  sideL:'Stand 6–8 ft away, camera at bed height. Capture the whole body, ear to feet, in your natural side-sleep position.',
+  back:'Stand at the foot or side of the bed. Capture the whole body. A side photo is better for the neck and low back.'
+};
 
 // ---- Landmark indices (MediaPipe Pose, 33 pts) ----
 const L = {
-  nose:0, lEye:2, rEye:5, lEar:7, rEar:8,
-  lSh:11, rSh:12, lEl:13, rEl:14, lWr:15, rWr:16,
-  lHip:23, rHip:24, lKnee:25, rKnee:26, lAnk:27, rAnk:28
+  nose:0, lEye:2, rEye:5, lEar:7, rEar:8, mouthL:9, mouthR:10,
+  lSh:11, rSh:12, lEl:13, rEl:14, lWr:15, rWr:16, lIndex:19, rIndex:20,
+  lHip:23, rHip:24, lKnee:25, rKnee:26, lAnk:27, rAnk:28,
+  lHeel:29, rHeel:30, lFoot:31, rFoot:32
 };
 // Skeleton connections (index pairs)
 const BONES = [
   [L.lSh,L.rSh],[L.lHip,L.rHip],[L.lSh,L.lHip],[L.rSh,L.rHip],
   [L.lSh,L.lEl],[L.lEl,L.lWr],[L.rSh,L.rEl],[L.rEl,L.rWr],
-  [L.lHip,L.lKnee],[L.lKnee,L.lAnk],[L.rHip,L.rKnee],[L.rKnee,L.rAnk]
+  [L.lWr,L.lIndex],[L.rWr,L.rIndex],
+  [L.lHip,L.lKnee],[L.lKnee,L.lAnk],[L.rHip,L.rKnee],[L.rKnee,L.rAnk],
+  [L.lAnk,L.lHeel],[L.lHeel,L.lFoot],[L.lAnk,L.lFoot],
+  [L.rAnk,L.rHeel],[L.rHeel,L.rFoot],[L.rAnk,L.rFoot]
 ];
-const DOTS = [L.nose,L.lSh,L.rSh,L.lEl,L.rEl,L.lWr,L.rWr,L.lHip,L.rHip,L.lKnee,L.rKnee,L.lAnk,L.rAnk];
+const DOTS = [L.nose,L.lEye,L.rEye,L.mouthL,L.mouthR,
+  L.lSh,L.rSh,L.lEl,L.rEl,L.lWr,L.rWr,L.lIndex,L.rIndex,
+  L.lHip,L.rHip,L.lKnee,L.rKnee,L.lAnk,L.rAnk,L.lHeel,L.rHeel,L.lFoot,L.rFoot];
 const SEV_COLOR = { priority:'#ef4444', monitor:'#f59e0b', educational:'#38bdf8' };
+const REF_COLOR = '#8aa0b6';   // muted style for derived reference points (not detected anatomy)
 
 // ---- Secure-context check ----
 function isSecure(){
@@ -189,16 +323,81 @@ function vis(p,th=0.5){ return p && (p.visibility===undefined || p.visibility>=t
 // angle of line a->b in degrees, aspect-corrected
 function angleDeg(a,b){ return Math.atan2((b.y-a.y),(b.x-a.x)*aspect)*180/Math.PI; }
 function angleDiff(d){ d=Math.abs(d)%360; return d>180?360-d:d; }
+function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+
+// Head support geometry for side positions. Models the user's mental picture: a straight
+// line through the body MIDLINE (shoulder-mid -> hip-mid = the spine axis) and how far the
+// head sits OFF that straight line. Head point is the VISIBLE (up-facing) ear — we pick the
+// ear with the higher visibility, never the one buried in the pillow — falling back to an
+// eye/nose centroid only if both ears are hidden. Used by BOTH evaluate() and paintPose() so
+// the live view and the captured image agree. Returns {ok:false} only when the head isn't in
+// frame at all or the trunk midline is missing — so we rarely skip, and never fabricate.
+function headSupportGeom(lm, world, pos){
+  if (!lm || (pos!=='sideR' && pos!=='sideL')) return null;
+  const shM = mid(lm[L.lSh],lm[L.rSh]);
+  const hipM = mid(lm[L.lHip],lm[L.rHip]);
+  if (!vis(shM,0.5) || !vis(hipM,0.5)) return { ok:false };
+  // head point = most-visible ear; fallback to eye/nose centroid if both ears hidden
+  let head=null, headSource='ear', headIdx=null;
+  const lE=lm[L.lEar], rE=lm[L.rEar];
+  const lV=(lE&&lE.visibility)||0, rV=(rE&&rE.visibility)||0;
+  if (Math.max(lV,rV) >= 0.5){ headIdx = (rV>=lV) ? L.rEar : L.lEar; head = lm[headIdx]; }
+  else {
+    const face=[lm[L.lEye],lm[L.rEye],lm[L.nose]].filter(p=>vis(p,0.5));
+    if (face.length){ head={ x:face.reduce((s,p)=>s+p.x,0)/face.length,
+                             y:face.reduce((s,p)=>s+p.y,0)/face.length }; headSource='face'; }
+  }
+  if (!head) return { ok:false };
+  const spine = { x:(shM.x-hipM.x)*aspect, y:(shM.y-hipM.y) }; // hip-mid -> shoulder-mid, up the spine
+  const neck  = { x:(head.x-shM.x)*aspect, y:(head.y-shM.y) }; // shoulder-mid -> head
+  const sLen=Math.hypot(spine.x,spine.y), nLen=Math.hypot(neck.x,neck.y);
+  if (sLen<1e-4 || nLen<1e-4) return { ok:false };
+  let c=(spine.x*neck.x+spine.y*neck.y)/(sLen*nLen); c=Math.max(-1,Math.min(1,c));
+  let angle=Math.acos(c)*180/Math.PI;                   // apparent (2D image-plane) deviation off the spine line
+  let is3D=false;
+  // 3D angle from world landmarks (metric, depth-aware) — more robust to camera perspective.
+  // Only when the head came from a real ear landmark (world index known); else keep the 2D estimate.
+  if (world && headIdx!=null && world[L.lSh] && world[L.rSh] && world[L.lHip] && world[L.rHip] && world[headIdx]){
+    const w3 = (i,j)=>({ x:(world[i].x+world[j].x)/2, y:(world[i].y+world[j].y)/2, z:(world[i].z+world[j].z)/2 });
+    const Wsh=w3(L.lSh,L.rSh), Whip=w3(L.lHip,L.rHip), Wh=world[headIdx];
+    const sp={x:Wsh.x-Whip.x,y:Wsh.y-Whip.y,z:Wsh.z-Whip.z};
+    const nk={x:Wh.x-Wsh.x,y:Wh.y-Wsh.y,z:Wh.z-Wsh.z};
+    const sm=Math.hypot(sp.x,sp.y,sp.z), nm=Math.hypot(nk.x,nk.y,nk.z);
+    if (sm>1e-6 && nm>1e-6){
+      let c3=(sp.x*nk.x+sp.y*nk.y+sp.z*nk.z)/(sm*nm); c3=Math.max(-1,Math.min(1,c3));
+      angle=Math.acos(c3)*180/Math.PI; is3D=true;
+    }
+  }
+  // neutral head position: shoulder-mid + (head distance) along the straight spine direction
+  const ux=spine.x/sLen, uy=spine.y/sLen;
+  const neutral = { x: shM.x + (ux/aspect)*nLen, y: shM.y + uy*nLen };
+  const dir = (head.y > neutral.y) ? 'toward' : 'away';  // lower in image = toward mattress
+  // derived draw-only reference points (estimates, not detected anatomy)
+  const neckPt = { x:(head.x+shM.x)/2, y:(head.y+shM.y)/2 };          // C7-ish neck reference
+  const headTop = { x: head.x + (head.x-shM.x)*0.3, y: head.y + (head.y-shM.y)*0.3 }; // estimated crown
+  return { ok:true, head, headSource, sh:shM, hip:hipM, neutral, angle, is3D, dir, neckPt, headTop };
+}
+// Interpolated reference points along the shoulder-mid -> hip-mid axis. VISUAL ONLY: a straight-line
+// interpolation can't reveal true spinal curvature (Pose has no landmarks between shoulders and hips).
+function trunkRefs(lm){
+  const shM = mid(lm[L.lSh],lm[L.rSh]);
+  const hipM = mid(lm[L.lHip],lm[L.rHip]);
+  if (!vis(shM,0.5) || !vis(hipM,0.5)) return { ok:false };
+  const at = t => ({ x: shM.x+(hipM.x-shM.x)*t, y: shM.y+(hipM.y-shM.y)*t });
+  return { ok:true, pts:[ at(1/3), at(2/3) ] };
+}
 
 // ---- Rule evaluation ----
 // returns { findings:[{n,severity,title,desc,point}], bodyLen }
-function evaluate(lm, pos){
+function evaluate(lm, world, pos){
   const out = [];
+  const skipped = [];                          // assessments we couldn't make from this frame
   const sh = mid(lm[L.lSh],lm[L.rSh]);
   const hip = mid(lm[L.lHip],lm[L.rHip]);
   const ank = mid(lm[L.lAnk],lm[L.rAnk]);
-  const bodyLen = dist(sh,hip) + dist(hip,ank);
-  if (!isFinite(bodyLen) || bodyLen < 1e-3) return { findings:[], bodyLen:0 };
+  const torso = dist(sh,hip);                  // shoulder-mid -> hip-mid, a stable local scale
+  const bodyLen = torso + dist(hip,ank);
+  if (!isFinite(bodyLen) || bodyLen < 1e-3) return { findings:[], bodyLen:0, skipped:[] };
   const pct = p => (p/100)*bodyLen;            // threshold as % of body length -> distance
   let n = 0;
   const add = (severity,title,desc,point)=> out.push({ n:++n, severity, title, desc, point });
@@ -208,6 +407,54 @@ function evaluate(lm, pos){
     const near = pos==='sideR'
       ? { sh:lm[L.rSh], hip:lm[L.rHip], wr:lm[L.rWr], knee:lm[L.rKnee] }
       : { sh:lm[L.lSh], hip:lm[L.lHip], wr:lm[L.lWr], knee:lm[L.lKnee] };
+
+    // 0. Head support / pillow height — the headline neck measure.
+    // Bands (8deg/18deg) are reasonable heuristics to CALIBRATE with a chiropractor,
+    // not cited clinical cutoffs. Angle is 3D (world landmarks) when available, else apparent 2D.
+    const hg = headSupportGeom(lm, world, pos);
+    if (hg && !hg.ok){
+      skipped.push({ title:'Head support / pillow height',
+        reason:'Head or torso not fully in frame. Capture from the head to the hips so the spine line and the up-facing ear both show.' });
+    } else if (hg){
+      const a=hg.angle;
+      const basis = hg.is3D ? '3D estimate' : 'apparent';
+      const where  = hg.dir==='toward' ? 'toward the mattress' : 'away from the mattress';
+      const pillow = hg.dir==='toward' ? 'pillow may be too low' : 'pillow may be too high';
+      if (a < 8){
+        add('educational','Head supported near neutral',
+          `Head sits ~${a.toFixed(0)}° off the straight spine line (${basis}) — close to in-line with your spine. A good reference setup to show your chiropractor.`, hg.head);
+      } else if (a <= 18){
+        add('monitor','Mild head tilt',
+          `Head ~${a.toFixed(0)}° off the straight spine line, ${where} (${basis}). ${cap(pillow)}. Worth tracking — ask your chiropractor what neutral should look like for you.`, hg.head);
+      } else {
+        add('priority','Head not supported in neutral',
+          `Head ~${a.toFixed(0)}° off the straight spine line, ${where} (${basis}) — the neck is side-bent through the night, which loads the neck and upper back. ${cap(pillow)}; bring this photo to your chiropractor.`, hg.head);
+      }
+
+      // 0b. Forward-head / cranio-vertebral offset — ear sitting forward of the shoulder (apparent 2D).
+      // Distinct from the head-support angle above. Bands (% of torso length) are heuristics to calibrate.
+      if (vis(near.sh)){
+        const fwd = Math.abs(hg.head.x - near.sh.x)*aspect;
+        const fp = torso>1e-4 ? fwd/torso*100 : 0;
+        if (fp >= 10){
+          add(fp>22?'priority':'monitor','Forward-head offset',
+            `Up-facing ear sits ~${fp.toFixed(0)}% of torso length forward of the shoulder (apparent) — a forward-head pattern that loads the lower neck. Ask your chiropractor whether your head should sit further back.`, hg.head);
+        }
+      } else {
+        skipped.push({ title:'Forward-head offset', reason:'Near shoulder not clearly in frame — capture the head and shoulder together from the side.' });
+      }
+
+      // 0c. Head pitch / chin position — nose relative to the up-facing ear (apparent 2D).
+      if (vis(lm[L.nose],0.5)){
+        const dv = (lm[L.nose].y - hg.head.y);                 // +ve = nose lower in image than ear
+        const cp = torso>1e-4 ? Math.abs(dv)/torso*100 : 0;
+        const chin = dv > 0 ? 'chin tucked toward the chest' : 'chin lifted away from the chest';
+        if (cp >= 12){
+          add(cp>25?'priority':'monitor','Head pitch / chin position',
+            `Nose sits ~${cp.toFixed(0)}% of torso length ${dv>0?'below':'above'} the ear (apparent) — ${chin}. Ask your chiropractor what head tilt they'd want overnight.`, lm[L.nose]);
+        }
+      }
+    }
 
     // 1. Shoulder protraction — near shoulder pushed forward of hip line
     if (vis(near.sh) && vis(near.hip)){
@@ -235,7 +482,7 @@ function evaluate(lm, pos){
       const diff = angleDiff(angleDeg(lm[L.lSh],lm[L.rSh]) - angleDeg(lm[L.lHip],lm[L.rHip]));
       if (diff > 12)
         add('priority','Shoulder–hip rotation',
-          `Shoulders and hips are twisted ~${diff.toFixed(0)}° apart — spinal torsion that concentrates load in the lumbar segments.`, mid(sh,hip));
+          `Shoulders and hips are twisted ~${diff.toFixed(0)}° apart — the spine is rotated, loading the mid/upper back and thoracic segments asymmetrically through the night.`, mid(sh,hip));
     }
   }
 
@@ -263,24 +510,7 @@ function evaluate(lm, pos){
       'Back-of-body view cannot see lumbar lordosis. Take a side-angle photo (Side R/L) to assess low-back support.', hip);
   }
 
-  else if (pos === 'belly'){
-    // 1. Cervical rotation — always priority in prone
-    const headTurn = vis(lm[L.nose]) ? (lm[L.nose].x - sh.x)*aspect : 0;
-    const side = headTurn>0 ? 'right' : 'left';
-    add('priority','Cervical rotation',
-      `Prone sleeping forces the head turned to one side (appears turned ${side}). Sustained cervical rotation compresses the facet joints and nerve roots.`, vis(lm[L.nose])?lm[L.nose]:sh);
-    // 2. Prone lumbar extension — educational
-    add('educational','Prone lumbar extension',
-      'Lying face-down extends the lumbar spine and anteriorly tilts the pelvis. A thin pillow under the abdomen reduces this.', hip);
-    // 3. Asymmetric arm position
-    if (vis(lm[L.lWr])&&vis(lm[L.rWr])){
-      const d = Math.abs(lm[L.lWr].y - lm[L.rWr].y);
-      if (d > pct(10)) add('monitor','Asymmetric arm position',
-        'Arms are at very different heights — typically one arm up by the head, twisting the shoulder girdle.', mid(lm[L.lWr],lm[L.rWr]));
-    }
-  }
-
-  return { findings: out, bodyLen };
+  return { findings: out, bodyLen, skipped };
 }
 
 // ---- Drawing ----
@@ -302,63 +532,122 @@ function project(p){
   if (facingMode === 'user') x = 1 - x; // front camera is mirrored in CSS
   return { x: ox + x*dw, y: oy + p.y*dh };
 }
-function drawScene(lm, findings){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+// Shared pose painter: draws bones, dots, and numbered pinch-point markers onto any
+// context `c`, using projection `proj` (normalized -> px) and size scale `s`.
+function paintPose(c, lm, findings, proj, s, world){
   if (!lm) return;
-  const dpr = window.devicePixelRatio || 1;
   // bones
-  ctx.lineWidth = 3*dpr; ctx.strokeStyle = 'rgba(99,179,237,.85)'; ctx.lineCap='round';
+  c.lineWidth = 3*s; c.strokeStyle = 'rgba(99,179,237,.9)'; c.lineCap='round';
   for (const [a,b] of BONES){
     if (!vis(lm[a],0.3) || !vis(lm[b],0.3)) continue;
-    const pa=project(lm[a]), pb=project(lm[b]);
-    ctx.beginPath(); ctx.moveTo(pa.x,pa.y); ctx.lineTo(pb.x,pb.y); ctx.stroke();
+    const pa=proj(lm[a]), pb=proj(lm[b]);
+    c.beginPath(); c.moveTo(pa.x,pa.y); c.lineTo(pb.x,pb.y); c.stroke();
   }
   // head -> shoulder mid
   if (vis(lm[L.nose],0.3) && vis(lm[L.lSh],0.3) && vis(lm[L.rSh],0.3)){
-    const pn=project(lm[L.nose]); const sm=project(mid(lm[L.lSh],lm[L.rSh]));
-    ctx.beginPath(); ctx.moveTo(pn.x,pn.y); ctx.lineTo(sm.x,sm.y); ctx.stroke();
+    const pn=proj(lm[L.nose]); const sm=proj(mid(lm[L.lSh],lm[L.rSh]));
+    c.beginPath(); c.moveTo(pn.x,pn.y); c.lineTo(sm.x,sm.y); c.stroke();
+  }
+  // derived trunk reference points (visual only — straight-line interpolation, not curvature)
+  const tr = trunkRefs(lm);
+  if (tr && tr.ok){
+    c.save();
+    for (const p of tr.pts){
+      const q=proj(p);
+      c.beginPath(); c.arc(q.x,q.y,3.5*s,0,Math.PI*2);
+      c.fillStyle='rgba(138,160,182,.18)'; c.fill();
+      c.lineWidth=1.5*s; c.strokeStyle=REF_COLOR; c.stroke();
+    }
+    c.restore();
+  }
+  // head-support guide (side positions): spine line (hip-mid->shoulder-mid), dashed "neutral"
+  // extension, the visible ear as its own point, derived neck/head-top refs, and the angle.
+  const hg = headSupportGeom(lm, world, position);
+  if (hg && hg.ok){
+    const hd=proj(hg.head), sP=proj(hg.sh), hP=proj(hg.hip), nt=proj(hg.neutral);
+    c.save();
+    c.lineCap='round';
+    // 1a. solid spine line: hip-mid -> shoulder-mid
+    c.lineWidth=3*s; c.strokeStyle='rgba(56,189,248,.95)';
+    c.beginPath(); c.moveTo(hP.x,hP.y); c.lineTo(sP.x,sP.y); c.stroke();
+    // 1b. dashed straight "neutral" line: shoulder-mid -> where a straight spine puts the head
+    c.setLineDash([7*s,6*s]); c.lineWidth=2.5*s; c.strokeStyle='rgba(56,189,248,.7)';
+    c.beginPath(); c.moveTo(sP.x,sP.y); c.lineTo(nt.x,nt.y); c.stroke();
+    c.setLineDash([]);
+    // 1c. actual head line: shoulder-mid -> visible head/ear (amber if off-line)
+    const off = hg.angle>=8;
+    c.lineWidth=3*s; c.strokeStyle = off ? 'rgba(245,158,11,.95)' : 'rgba(56,189,248,.95)';
+    c.beginPath(); c.moveTo(sP.x,sP.y); c.lineTo(hd.x,hd.y); c.stroke();
+    // 2. the visible ear as its own ringed point
+    c.beginPath(); c.arc(hd.x,hd.y,6*s,0,Math.PI*2);
+    c.fillStyle = off ? 'rgba(245,158,11,.35)' : 'rgba(56,189,248,.35)'; c.fill();
+    c.lineWidth=2.5*s; c.strokeStyle = off ? '#f59e0b' : '#38bdf8'; c.stroke();
+    // 3. derived neck + head-top reference markers (muted; estimates, not detected anatomy)
+    for (const rp of [hg.neckPt, hg.headTop]){
+      const q=proj(rp);
+      c.beginPath(); c.arc(q.x,q.y,3.5*s,0,Math.PI*2);
+      c.fillStyle='rgba(138,160,182,.18)'; c.fill();
+      c.lineWidth=1.5*s; c.strokeStyle=REF_COLOR; c.stroke();
+    }
+    // 4. angle label (notes 3D vs apparent basis)
+    c.fillStyle = off ? '#ffd9a8' : '#bfe9ff'; c.font=`bold ${12*s}px -apple-system,Segoe UI,Roboto,sans-serif`;
+    c.textAlign='left'; c.textBaseline='middle';
+    c.fillText(`${hg.angle.toFixed(0)}°${hg.is3D?' 3D':''}`, hd.x+10*s, hd.y);
+    c.restore();
   }
   // dots
-  ctx.fillStyle = '#e7eef7';
+  c.fillStyle = '#e7eef7';
   for (const i of DOTS){
     if (!vis(lm[i],0.3)) continue;
-    const p=project(lm[i]);
-    ctx.beginPath(); ctx.arc(p.x,p.y,4.5*dpr,0,Math.PI*2); ctx.fill();
+    const p=proj(lm[i]);
+    c.beginPath(); c.arc(p.x,p.y,4.5*s,0,Math.PI*2); c.fill();
   }
   // pinch-point markers
-  ctx.font = `bold ${13*dpr}px -apple-system,Segoe UI,Roboto,sans-serif`;
-  ctx.textAlign='center'; ctx.textBaseline='middle';
+  c.font = `bold ${13*s}px -apple-system,Segoe UI,Roboto,sans-serif`;
+  c.textAlign='center'; c.textBaseline='middle';
   for (const f of findings){
     if (!f.point) continue;
-    const p = project(f.point);
-    const c = SEV_COLOR[f.severity];
-    ctx.beginPath(); ctx.arc(p.x,p.y,13*dpr,0,Math.PI*2);
-    ctx.fillStyle = c; ctx.globalAlpha=.28; ctx.fill(); ctx.globalAlpha=1;
-    ctx.lineWidth=3*dpr; ctx.strokeStyle=c; ctx.stroke();
-    ctx.fillStyle='#fff'; ctx.fillText(String(f.n), p.x, p.y+0.5*dpr);
+    const p = proj(f.point);
+    const col = SEV_COLOR[f.severity];
+    c.beginPath(); c.arc(p.x,p.y,13*s,0,Math.PI*2);
+    c.fillStyle = col; c.globalAlpha=.28; c.fill(); c.globalAlpha=1;
+    c.lineWidth=3*s; c.strokeStyle=col; c.stroke();
+    c.fillStyle='#fff'; c.fillText(String(f.n), p.x, p.y+0.5*s);
   }
+}
+function drawScene(lm, findings, world){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  paintPose(ctx, lm, findings, project, window.devicePixelRatio || 1, world);
 }
 
 // ---- Findings list render ----
-function renderFindings(list, msg){
+function esc(s){ return String(s).replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function renderFindings(list, msg, skipped){
   findingsEl.innerHTML='';
   if (msg){
     const d=document.createElement('div'); d.className='card none'; d.textContent=msg;
-    findingsEl.appendChild(d); return;
-  }
-  if (!list.length){
+    findingsEl.appendChild(d);
+  } else if (!list.length){
     const d=document.createElement('div'); d.className='card none';
-    d.textContent='No pinch-points flagged for this position.'; findingsEl.appendChild(d); return;
+    d.textContent='No pinch-points flagged for this position.'; findingsEl.appendChild(d);
+  } else {
+    for (const f of list){
+      const card=document.createElement('div'); card.className='card '+
+        (f.severity==='priority'?'red':f.severity==='monitor'?'amber':'blue');
+      card.innerHTML =
+        `<div class="num">${f.n}</div><div class="body">`+
+        `<div class="sev">${esc(f.severity)}</div>`+
+        `<div class="title">${esc(f.title)}</div>`+
+        `<div class="desc">${esc(f.desc)}</div></div>`;
+      findingsEl.appendChild(card);
+    }
   }
-  for (const f of list){
-    const card=document.createElement('div'); card.className='card '+
-      (f.severity==='priority'?'red':f.severity==='monitor'?'amber':'blue');
-    card.innerHTML =
-      `<div class="num">${f.n}</div><div class="body">`+
-      `<div class="sev">${f.severity}</div>`+
-      `<div class="title">${f.title}</div>`+
-      `<div class="desc">${f.desc}</div></div>`;
-    findingsEl.appendChild(card);
+  if (skipped && skipped.length){
+    for (const sdef of skipped){
+      const card=document.createElement('div'); card.className='card none';
+      card.innerHTML = `<b>Couldn’t assess — ${esc(sdef.title)}.</b> ${esc(sdef.reason)}`;
+      findingsEl.appendChild(card);
+    }
   }
 }
 
@@ -370,7 +659,7 @@ async function ensureModel(){
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
   landmarker = await PoseLandmarker.createFromOptions(fileset, {
     baseOptions:{
-      modelAssetPath:"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+      modelAssetPath:"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task",
       delegate:"GPU"
     },
     runningMode:"VIDEO",
@@ -414,14 +703,19 @@ function loop(){
     let res=null;
     try { res = landmarker.detectForVideo(video, now); } catch(e){ /* transient */ }
     const lm = res && res.landmarks && res.landmarks[0];
+    const world = res && res.worldLandmarks && res.worldLandmarks[0];
     if (lm){
       hint.style.display='none';
-      const { findings } = evaluate(lm, position);
-      drawScene(lm, findings);
-      renderFindings(findings);
+      const { findings, skipped } = evaluate(lm, world, position);
+      drawScene(lm, findings, world);
+      renderFindings(findings, null, skipped);
+      lastLandmarks = lm; lastWorld = world; lastFindings = findings; lastSkipped = skipped;
+      lmBuffer.push({ lm, world }); if (lmBuffer.length>LM_BUFFER_MAX) lmBuffer.shift();
     } else {
       ctx.clearRect(0,0,canvas.width,canvas.height);
       renderFindings([], 'No person detected — make sure the whole body is in frame.');
+      lastLandmarks = null; lastWorld = null; lastFindings = []; lastSkipped = [];
+      lmBuffer.length = 0;
     }
   }
   // FPS (EMA)
@@ -445,7 +739,7 @@ async function start(){
     await ensureModel();
     await startStream();
     hideBanner();
-    running=true; stopBtn.disabled=false;
+    running=true; stopBtn.disabled=false; captureBtn.disabled=false;
     lastVideoTime=-1; lastFrameT=0; fpsEma=0;
     loop();
   }catch(err){
@@ -456,13 +750,15 @@ async function start(){
 function stop(){
   running=false;
   if (rafId) cancelAnimationFrame(rafId);
+  cancelCountdown();
   stopStream();
   ctx.clearRect(0,0,canvas.width,canvas.height);
   fpsEl.textContent='--';
-  startBtn.disabled=false; stopBtn.disabled=true;
+  startBtn.disabled=false; stopBtn.disabled=true; captureBtn.disabled=true;
   hint.style.display='flex';
   hint.innerHTML='Stopped. Tap <b>&nbsp;Start&nbsp;</b> to resume.';
   renderFindings([], 'Camera stopped.');
+  lastLandmarks=null; lastFindings=[]; lastSkipped=[];
 }
 async function switchCamera(){
   facingMode = facingMode==='environment' ? 'user' : 'environment';
@@ -483,16 +779,313 @@ function handleCameraError(err){
   showBanner(msg);
 }
 
+// ---- Capture & Send ----
+function nowStamp(){
+  const d=new Date(), p=n=>String(n).padStart(2,'0');
+  return {
+    date:`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`,
+    time:`${p(d.getHours())}:${p(d.getMinutes())}`,
+    file:`${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`
+  };
+}
+function wrapText(c, text, maxW){
+  const words=text.split(' '); const lines=[]; let line='';
+  for (const w of words){
+    const test=line?line+' '+w:w;
+    if (c.measureText(test).width>maxW && line){ lines.push(line); line=w; }
+    else line=test;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+function buildReportText(stamp){
+  const out=[];
+  out.push('PinchPoint — posture pinch-point findings');
+  out.push(`Position: ${POS_LABEL[position]}`);
+  out.push(`Captured: ${stamp.date} ${stamp.time}`);
+  out.push('');
+  if (lastFindings.length){
+    for (const f of lastFindings)
+      out.push(`#${f.n} [${f.severity.toUpperCase()}] ${f.title} — ${f.desc}`);
+  } else {
+    out.push('No pinch-points flagged (or no person detected at capture).');
+  }
+  // Turn findings into questions to raise at the visit (observations, not instructions).
+  out.push('');
+  out.push('DISCUSS WITH YOUR CHIROPRACTOR');
+  const talk = lastFindings.filter(f=>f.severity!=='educational');
+  if (talk.length){
+    for (const f of talk)
+      out.push(`• ${f.title}: is this loading my neck / upper back, and what should neutral look like for me?`);
+  } else {
+    out.push('• This setup looks close to neutral — is this what you want me to keep?');
+  }
+  if (lastSkipped.length){
+    out.push('');
+    out.push('COULD NOT ASSESS FROM THIS PHOTO');
+    for (const sdef of lastSkipped) out.push(`• ${sdef.title}: ${sdef.reason}`);
+  }
+  out.push('');
+  out.push('Severity: PRIORITY = address first · MONITOR = keep an eye on · EDUCATIONAL = context.');
+  out.push('The head-support angle uses 3D landmarks (single-camera estimate); offset measures are apparent');
+  out.push('(image-plane). All thresholds are heuristics meant to be calibrated with your provider.');
+  out.push('Generated by PinchPoint. Informational only — not a medical diagnosis.');
+  return out.join('\n');
+}
+function buildSnapshotCanvas(stamp){
+  const vw=video.videoWidth||720, vh=video.videoHeight||960;
+  const s=Math.max(1, vw/360);                 // size scale for lines/markers/text
+  const pad=18*s, fs=15*s, lh=fs*1.32;
+  const mirror = facingMode==='user';
+  // pre-measure wrapped findings to size the footer band
+  const meas=document.createElement('canvas').getContext('2d');
+  meas.font=`${fs}px -apple-system,Segoe UI,Roboto,sans-serif`;
+  const textW=vw-pad*2-16*s;
+  const items = (lastFindings.length ? lastFindings.slice()
+    : [{severity:'none', n:'', title:'', desc:'No pinch-points flagged (or no person detected at capture).'}]);
+  for (const sdef of lastSkipped)
+    items.push({severity:'none', n:'', title:'', desc:`Not assessed — ${sdef.title}: ${sdef.reason}`});
+  items.push({severity:'none', n:'', title:'', desc:'Questions to ask your chiropractor are in the shared report text.'});
+  let rows=0;
+  const wrapped=items.map(f=>{
+    const label=f.n ? `#${f.n} ${(f.severity||'').toUpperCase()} — ${f.title}: ${f.desc}` : f.desc;
+    const w=wrapText(meas,label,textW); rows+=w.length; return {f,w};
+  });
+  const headerH=lh*2+pad, footerH=headerH+rows*lh+lh*2+pad*2;
+  const W=vw, H=vh+footerH;
+
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const c=cv.getContext('2d');
+  c.fillStyle='#0b0f14'; c.fillRect(0,0,W,H);
+  // frozen video frame (mirror front camera to match the overlay)
+  c.save();
+  if (mirror){ c.translate(vw,0); c.scale(-1,1); }
+  c.drawImage(video, 0,0, vw, vh);
+  c.restore();
+  // pose overlay projected onto the full frame
+  const projFull = p => ({ x:(mirror?1-p.x:p.x)*vw, y:p.y*vh });
+  paintPose(c, lastLandmarks, lastFindings, projFull, s, lastWorld);
+
+  // footer report band
+  c.textAlign='left'; c.textBaseline='alphabetic';
+  let y=vh+pad+fs;
+  c.fillStyle='#e7eef7'; c.font=`bold ${fs*1.15}px -apple-system,Segoe UI,Roboto,sans-serif`;
+  c.fillText('PinchPoint — pinch-point findings', pad, y); y+=lh;
+  c.fillStyle='#8aa0b6'; c.font=`${fs*0.9}px -apple-system,Segoe UI,Roboto,sans-serif`;
+  c.fillText(`${POS_LABEL[position]}  ·  ${stamp.date} ${stamp.time}`, pad, y);
+  for (const {f,w} of wrapped){
+    y+=lh;
+    const col=SEV_COLOR[f.severity]||'#8aa0b6';
+    c.fillStyle=col; c.beginPath(); c.arc(pad+5*s, y-fs*0.32, 5*s, 0, Math.PI*2); c.fill();
+    c.fillStyle='#dbe6f2'; c.font=`${fs}px -apple-system,Segoe UI,Roboto,sans-serif`;
+    for (let i=0;i<w.length;i++){ if (i) y+=lh; c.fillText(w[i], pad+16*s, y); }
+  }
+  y+=lh*1.4;
+  c.fillStyle='#6b7f95'; c.font=`${fs*0.82}px -apple-system,Segoe UI,Roboto,sans-serif`;
+  c.fillText('Informational only — not a medical diagnosis.', pad, y);
+  return cv;
+}
+function fileShareSupported(){
+  try { return !!navigator.canShare &&
+    navigator.canShare({ files:[ new File([new Blob([new Uint8Array(1)])], 'p.jpg', {type:'image/jpeg'}) ] }); }
+  catch(e){ return false; }
+}
+// ---- Toast + session tracker ----
+let toastTimer=null;
+function toast(msg){
+  toastEl.textContent=msg; toastEl.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>toastEl.classList.remove('show'), 2200);
+}
+function captureCount(){ return ['sideR','sideL','back'].filter(p=>session[p]).length; }
+function updateTracker(){
+  const mark = p => session[p] ? `${POS_LABEL[p]} ✓` : `${POS_LABEL[p]} —`;
+  trackerEl.textContent = `Captured: ${mark('sideR')} · ${mark('sideL')} · ${mark('back')}`;
+  [...posWrap.children].forEach(b=> b.classList.toggle('done', !!session[b.dataset.pos]));
+  const n=captureCount();
+  reviewBtn.disabled = n===0;
+  reviewBtn.textContent = n ? `Send to chiropractor (${n})` : 'Send to chiropractor';
+}
+
+// ---- Self-timer capture ----
+function beep(freq, ms){
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
+    beep.ctx = beep.ctx || new AC();
+    if (beep.ctx.state==='suspended') beep.ctx.resume();
+    const o=beep.ctx.createOscillator(), g=beep.ctx.createGain();
+    o.frequency.value=freq; o.type='sine'; o.connect(g); g.connect(beep.ctx.destination);
+    g.gain.setValueAtTime(0.001, beep.ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.25, beep.ctx.currentTime+0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, beep.ctx.currentTime+ms/1000);
+    o.start(); o.stop(beep.ctx.currentTime+ms/1000);
+  }catch(e){}
+}
+function cancelCountdown(){
+  if (countdownTimer){ clearTimeout(countdownTimer); countdownTimer=null; }
+  countdownEl.classList.remove('show'); countdownEl.textContent='';
+  if (running) captureBtn.disabled=false;
+}
+function startTimedCapture(){
+  if (!running){ showBanner('<b>Start the camera first,</b> then get into position and tap Capture.'); return; }
+  if (countdownTimer) { cancelCountdown(); return; }   // tapping again cancels
+  captureBtn.disabled=true;
+  let n=3;
+  const tick=()=>{
+    if (n>0){
+      countdownEl.textContent=String(n); countdownEl.classList.add('show'); beep(660,120); n--;
+      countdownTimer=setTimeout(tick, 1000);
+    } else {
+      countdownEl.classList.remove('show'); countdownEl.textContent=''; countdownTimer=null;
+      beep(990,200);
+      captureCurrent();
+      captureBtn.disabled=false;
+    }
+  };
+  tick();
+}
+countdownEl.addEventListener('click', cancelCountdown);
+
+// Visibility-weighted average of the buffered frames → a stabilized landmark/world set for capture.
+function averageFrames(buf){
+  if (!buf.length) return null;
+  const n = buf[0].lm.length;
+  const hasWorld = buf.every(f=>f.world && f.world.length===n);
+  const lm = new Array(n), world = hasWorld ? new Array(n) : null;
+  for (let i=0;i<n;i++){
+    let x=0,y=0,visSum=0,wSum=0;
+    let X=0,Y=0,Z=0,wwSum=0;
+    for (const f of buf){
+      const p=f.lm[i]; const w=(p.visibility==null?1:p.visibility);
+      x+=p.x*w; y+=p.y*w; wSum+=w; visSum+=(p.visibility==null?1:p.visibility);
+      if (hasWorld){ const wp=f.world[i]; X+=wp.x*w; Y+=wp.y*w; Z+=wp.z*w; wwSum+=w; }
+    }
+    const last=buf[buf.length-1];
+    lm[i] = wSum>0 ? { x:x/wSum, y:y/wSum, visibility:visSum/buf.length } : { ...last.lm[i] };
+    if (hasWorld) world[i] = wwSum>0 ? { x:X/wwSum, y:Y/wwSum, z:Z/wwSum } : { ...last.world[i] };
+  }
+  return { lm, world };
+}
+function captureCurrent(){
+  const pos=position;
+  // Use the averaged buffer (steadier numbers) for the saved snapshot + report.
+  const avg = averageFrames(lmBuffer);
+  if (avg){
+    const { findings, skipped } = evaluate(avg.lm, avg.world, pos);
+    lastLandmarks = avg.lm; lastWorld = avg.world; lastFindings = findings; lastSkipped = skipped;
+  }
+  const stamp=nowStamp();
+  const report=buildReportText(stamp);
+  const cv=buildSnapshotCanvas(stamp);
+  cv.toBlob(blob=>{
+    if (!blob){ toast('Capture failed — try again'); return; }
+    const slot=session[pos];
+    if (slot && slot.url) URL.revokeObjectURL(slot.url);
+    session[pos]={ position:pos, stamp, blob, url:URL.createObjectURL(blob),
+      filename:`pinchpoint-${pos}-${stamp.file}.jpg`, report };
+    updateTracker();
+    toast(`${POS_LABEL[pos]} captured ✓`);
+  }, 'image/jpeg', 0.92);
+}
+
+// ---- Combined review + send ----
+function buildCombinedReport(){
+  const caps=['sideR','sideL','back'].map(p=>session[p]).filter(Boolean);
+  const out=[];
+  out.push('PinchPoint — sleep posture observation report');
+  out.push(`Generated: ${nowStamp().date} ${nowStamp().time}`);
+  out.push(`Positions captured: ${caps.length}`);
+  out.push('');
+  for (const r of caps){
+    out.push('────────────────────────');
+    out.push(r.report);
+    out.push('');
+  }
+  out.push('Shared from PinchPoint. Observations only — not a medical diagnosis.');
+  return out.join('\n');
+}
+function openReview(){
+  const caps=['sideR','sideL','back'].map(p=>session[p]).filter(Boolean);
+  if (!caps.length){ toast('Capture a position first'); return; }
+  capThumbs.innerHTML='';
+  for (const r of caps){
+    const wrap=document.createElement('div'); wrap.className='thumb';
+    const lbl=document.createElement('div'); lbl.className='lbl';
+    lbl.textContent=`${POS_LABEL[r.position]} · ${r.stamp.date} ${r.stamp.time}`;
+    const img=document.createElement('img'); img.src=r.url; img.alt=`${POS_LABEL[r.position]} annotated snapshot`;
+    wrap.appendChild(lbl); wrap.appendChild(img); capThumbs.appendChild(wrap);
+  }
+  capSub.textContent = `${caps.length} position${caps.length>1?'s':''} ready to send.`;
+  capReport.value = buildCombinedReport();
+  const canShareFiles=fileShareSupported();
+  // Phones: the share path is the only one that attaches the photos — make it the single primary
+  // action and hide the text-only mailto button so it can't be tapped by mistake.
+  shareBtn.style.display = canShareFiles ? '' : 'none';
+  emailBtn.style.display = canShareFiles ? 'none' : '';
+  capNote.textContent = canShareFiles
+    ? 'Tap “Email photos to chiropractor”, then choose Mail — your mail app opens with the photos already attached and the report in the body. Just type your chiropractor’s address and send.'
+    : 'On this device: tap “Save images” to download them, then attach them to an email. “Email text only” pre-fills the report words without pictures.';
+  capturePanel.classList.add('show');
+}
+function closeReview(){ capturePanel.classList.remove('show'); }
+function sessionFiles(){
+  return ['sideR','sideL','back'].map(p=>session[p]).filter(Boolean)
+    .map(r=> new File([r.blob], r.filename, {type:'image/jpeg'}));
+}
+async function shareSession(){
+  const files=sessionFiles(); if (!files.length) return;
+  try{
+    if (navigator.canShare && navigator.canShare({files}))
+      await navigator.share({ files, title:'PinchPoint sleep posture findings', text:capReport.value });
+    else
+      downloadSession();
+  }catch(e){ /* user dismissed the share sheet — no-op */ }
+}
+function downloadSession(){
+  const caps=['sideR','sideL','back'].map(p=>session[p]).filter(Boolean);
+  caps.forEach((r,i)=> setTimeout(()=>{
+    const a=document.createElement('a'); a.href=r.url; a.download=r.filename;
+    document.body.appendChild(a); a.click(); a.remove();
+  }, i*400));
+}
+function emailSession(){
+  const subject=encodeURIComponent('PinchPoint sleep posture findings');
+  // mailto can't carry images — send the report text only, and point them to the image path.
+  const body=encodeURIComponent(capReport.value+'\n\n(Report text only. The annotated images are sent with the “Send images + report” button on a phone.)');
+  window.location.href=`mailto:?subject=${subject}&body=${body}`;
+}
+function clearSession(){
+  for (const p of ['sideR','sideL','back']){
+    if (session[p] && session[p].url) URL.revokeObjectURL(session[p].url);
+    session[p]=null;
+  }
+  updateTracker(); closeReview(); toast('Started over');
+}
+
 // ---- Wire up ----
 startBtn.addEventListener('click', start);
 stopBtn.addEventListener('click', stop);
 switchBtn.addEventListener('click', switchCamera);
+captureBtn.addEventListener('click', startTimedCapture);
+reviewBtn.addEventListener('click', openReview);
+shareBtn.addEventListener('click', shareSession);
+downloadBtn.addEventListener('click', downloadSession);
+emailBtn.addEventListener('click', emailSession);
+closeCapBtn.addEventListener('click', closeReview);
+startOverBtn.addEventListener('click', clearSession);
+capturePanel.addEventListener('click', e=>{ if (e.target===capturePanel) closeReview(); });
 posWrap.addEventListener('click', e=>{
   const b = e.target.closest('button[data-pos]'); if(!b) return;
   position = b.dataset.pos;
   [...posWrap.children].forEach(c=>c.classList.toggle('active', c===b));
+  updateTip();
 });
+function updateTip(){
+  tipEl.textContent = (POS_TIP[position] || '') +
+    ' Tip: tap Switch camera to use the front camera so you can see yourself, then tap Capture — a 3-second timer gives you time to get still.';
+}
 window.addEventListener('resize', ()=>{ if (video.videoWidth) resizeCanvas(); });
+updateTip();
+updateTracker();
 renderFindings([], 'Choose a position and tap Start.');
 </script>
 </body>
