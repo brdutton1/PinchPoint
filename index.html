@@ -59,6 +59,8 @@
     text-shadow:0 2px 24px rgba(0,0,0,.6);z-index:3;cursor:pointer}
   .stage .countdown.show{display:flex}
   @media (min-width:520px){ .stage .countdown{font-size:180px} }
+  /* Full-screen white flash used as a visible countdown cue (pointer-events:none so taps pass through) */
+  #flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:50}
 
   .legend{display:flex;gap:14px;flex-wrap:wrap;padding:10px 16px 0;color:var(--muted);font-size:12px}
   .legend span{display:inline-flex;align-items:center;gap:6px}
@@ -159,6 +161,7 @@
       <div class="hint" id="hint">Tap <b>&nbsp;Start&nbsp;</b> to begin. Allow camera access when prompted.</div>
       <div class="countdown" id="countdown"></div>
     </div>
+    <div id="flash"></div>
 
     <div class="side">
       <div class="bar">
@@ -175,7 +178,7 @@
       </div>
 
       <div class="capture">
-        <button id="captureBtn" disabled>📷 Capture (3s timer)</button>
+        <button id="captureBtn" disabled>📷 Capture (5s timer)</button>
         <button id="reviewBtn" class="review" disabled>Send to chiropractor</button>
       </div>
 
@@ -240,6 +243,7 @@ const reviewBtn = document.getElementById('reviewBtn');
 const tipEl = document.getElementById('tip');
 const trackerEl = document.getElementById('tracker');
 const countdownEl = document.getElementById('countdown');
+const flashEl = document.getElementById('flash');
 const toastEl = document.getElementById('toast');
 const capturePanel = document.getElementById('capturePanel');
 const capThumbs = document.getElementById('capThumbs');
@@ -915,6 +919,17 @@ function beep(freq, ms){
     o.start(); o.stop(beep.ctx.currentTime+ms/1000);
   }catch(e){}
 }
+// Bright white screen flash — a visible countdown cue from across the room. `strong` (capture
+// moment) is brighter and lingers a touch longer than the per-second ticks. Re-triggers cleanly:
+// snap to high opacity with no transition, force a reflow, then fade back to 0.
+function flash(strong){
+  if (!flashEl) return;
+  flashEl.style.transition = 'none';
+  flashEl.style.opacity = strong ? '0.98' : '0.85';
+  void flashEl.offsetWidth;                                   // force reflow so the fade restarts
+  flashEl.style.transition = `opacity ${strong?420:260}ms ease-out`;
+  flashEl.style.opacity = '0';
+}
 function cancelCountdown(){
   if (countdownTimer){ clearTimeout(countdownTimer); countdownTimer=null; }
   countdownEl.classList.remove('show'); countdownEl.textContent='';
@@ -924,14 +939,14 @@ function startTimedCapture(){
   if (!running){ showBanner('<b>Start the camera first,</b> then get into position and tap Capture.'); return; }
   if (countdownTimer) { cancelCountdown(); return; }   // tapping again cancels
   captureBtn.disabled=true;
-  let n=3;
+  let n=5;
   const tick=()=>{
     if (n>0){
-      countdownEl.textContent=String(n); countdownEl.classList.add('show'); beep(660,120); n--;
+      countdownEl.textContent=String(n); countdownEl.classList.add('show'); beep(660,120); flash(false); n--;
       countdownTimer=setTimeout(tick, 1000);
     } else {
       countdownEl.classList.remove('show'); countdownEl.textContent=''; countdownTimer=null;
-      beep(990,200);
+      beep(990,200); flash(true);
       captureCurrent();
       captureBtn.disabled=false;
     }
@@ -1076,7 +1091,7 @@ posWrap.addEventListener('click', e=>{
 });
 function updateTip(){
   tipEl.textContent = (POS_TIP[position] || '') +
-    ' Tip: tap Switch camera to use the front camera so you can see yourself, then tap Capture — a 3-second timer gives you time to get still.';
+    ' Tip: tap Switch camera to use the front camera so you can see yourself, then tap Capture — a 5-second timer gives you time to get still, and the screen flashes each second so you can see the count from across the room.';
 }
 window.addEventListener('resize', ()=>{ if (video.videoWidth) resizeCanvas(); });
 updateTip();
