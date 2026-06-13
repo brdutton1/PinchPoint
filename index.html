@@ -930,8 +930,29 @@ function flash(strong){
   flashEl.style.transition = `opacity ${strong?420:260}ms ease-out`;
   flashEl.style.opacity = '0';
 }
+// Back-camera LED torch — a physical light blink for when the phone is propped with the screen
+// facing AWAY. Best-effort: only works on the back (environment) camera on devices that expose the
+// capability (mostly Android Chrome); silently no-ops on iOS Safari or the front camera.
+let torchTimer = null;
+function torchTrack(){
+  const t = (stream && stream.getVideoTracks) ? stream.getVideoTracks()[0] : null;
+  if (!t || !t.getCapabilities) return null;
+  try{ return t.getCapabilities().torch ? t : null; }catch(e){ return null; }
+}
+function torchSet(on){
+  const t = torchTrack(); if (!t) return;
+  try{ t.applyConstraints({ advanced:[{ torch: !!on }] }); }catch(e){}
+}
+function torchBlink(strong){
+  if (!torchTrack()) return;
+  if (torchTimer){ clearTimeout(torchTimer); torchTimer=null; }
+  torchSet(true);
+  torchTimer = setTimeout(()=>{ torchSet(false); torchTimer=null; }, strong?450:240);
+}
 function cancelCountdown(){
   if (countdownTimer){ clearTimeout(countdownTimer); countdownTimer=null; }
+  if (torchTimer){ clearTimeout(torchTimer); torchTimer=null; }
+  torchSet(false);                              // make sure the LED isn't left on if cancelled mid-blink
   countdownEl.classList.remove('show'); countdownEl.textContent='';
   if (running) captureBtn.disabled=false;
 }
@@ -942,11 +963,11 @@ function startTimedCapture(){
   let n=5;
   const tick=()=>{
     if (n>0){
-      countdownEl.textContent=String(n); countdownEl.classList.add('show'); beep(660,120); flash(false); n--;
+      countdownEl.textContent=String(n); countdownEl.classList.add('show'); beep(660,120); flash(false); torchBlink(false); n--;
       countdownTimer=setTimeout(tick, 1000);
     } else {
       countdownEl.classList.remove('show'); countdownEl.textContent=''; countdownTimer=null;
-      beep(990,200); flash(true);
+      beep(990,200); flash(true); torchBlink(true);
       captureCurrent();
       captureBtn.disabled=false;
     }
@@ -1091,7 +1112,7 @@ posWrap.addEventListener('click', e=>{
 });
 function updateTip(){
   tipEl.textContent = (POS_TIP[position] || '') +
-    ' Tip: tap Switch camera to use the front camera so you can see yourself, then tap Capture — a 5-second timer gives you time to get still, and the screen flashes each second so you can see the count from across the room.';
+    ' Tip: tap Switch camera to use the front camera so you can see yourself, then tap Capture — a 5-second timer gives you time to get still, and each second the screen flashes and (on the back camera) the phone\'s light blinks so you can see the count from across the room.';
 }
 window.addEventListener('resize', ()=>{ if (video.videoWidth) resizeCanvas(); });
 updateTip();
