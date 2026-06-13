@@ -49,7 +49,7 @@
   .ctrls button.danger{background:#3a1416;border-color:#5b2226;color:#ffd9dc}
 
   .stage{position:relative;margin:10px 14px 0;background:#000;border-radius:14px;
-    overflow:hidden;border:1px solid var(--line);aspect-ratio:3/4}
+    overflow:hidden;border:1px solid var(--line);aspect-ratio:4/3}
   .stage video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
   .stage canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
   .stage .hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
@@ -274,9 +274,9 @@ const session = { sideR:null, sideL:null, back:null };
 let countdownTimer = null;  // active self-timer handle
 const POS_LABEL = { sideR:'Side (right)', sideL:'Side (left)', back:'Back' };
 const POS_TIP = {
-  sideR:'Stand 6–8 ft away, camera at bed height. Capture the whole body, ear to feet, in your natural side-sleep position.',
-  sideL:'Stand 6–8 ft away, camera at bed height. Capture the whole body, ear to feet, in your natural side-sleep position.',
-  back:'Stand at the foot or side of the bed. Capture the whole body. A side photo is better for the neck and low back.'
+  sideR:'Turn your phone sideways (landscape) and prop it near bed height. Get your head, shoulder and hip in frame — legs are a bonus. In landscape you can stand much closer.',
+  sideL:'Turn your phone sideways (landscape) and prop it near bed height. Get your head, shoulder and hip in frame — legs are a bonus. In landscape you can stand much closer.',
+  back:'Turn your phone sideways (landscape) and prop it near bed height, framing as much of the body as fits. A side photo is better for the neck and low back.'
 };
 
 // ---- Landmark indices (MediaPipe Pose, 33 pts) ----
@@ -299,7 +299,6 @@ const DOTS = [L.nose,L.lEye,L.rEye,L.mouthL,L.mouthR,
   L.lSh,L.rSh,L.lEl,L.rEl,L.lWr,L.rWr,L.lIndex,L.rIndex,
   L.lHip,L.rHip,L.lKnee,L.rKnee,L.lAnk,L.rAnk,L.lHeel,L.rHeel,L.lFoot,L.rFoot];
 const SEV_COLOR = { priority:'#ef4444', monitor:'#f59e0b', educational:'#38bdf8' };
-const REF_COLOR = '#8aa0b6';   // muted style for derived reference points (not detected anatomy)
 
 // ---- Secure-context check ----
 function isSecure(){
@@ -334,32 +333,43 @@ function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
 // frame at all or the trunk midline is missing — so we rarely skip, and never fabricate.
 function headSupportGeom(lm, world, pos){
   if (!lm || (pos!=='sideR' && pos!=='sideL')) return null;
-  const shM = mid(lm[L.lSh],lm[L.rSh]);
-  const hipM = mid(lm[L.lHip],lm[L.rHip]);
-  if (!vis(shM,0.5) || !vis(hipM,0.5)) return { ok:false };
-  // head point = most-visible ear; fallback to eye/nose centroid if both ears hidden
+  // Build the spine from the VISIBLE (up-facing) side's real joints — never from left/right
+  // midpoints, which on a side-lying body average in the fabricated bed-side shoulder/hip and
+  // drag the line off (the old corrupted "U-shape"). Score each side by shoulder+hip+ear
+  // visibility; break near-ties toward the labelled position (sideR->right, sideL->left) so the
+  // chosen side doesn't flip frame-to-frame on near-symmetric poses.
+  const SIDE = {
+    L:{ sh:L.lSh, hip:L.lHip, ear:L.lEar, knee:L.lKnee, ank:L.lAnk },
+    R:{ sh:L.rSh, hip:L.rHip, ear:L.rEar, knee:L.rKnee, ank:L.rAnk }
+  };
+  const visOf = p => (p && (p.visibility===undefined?1:p.visibility)) || 0;
+  const score = s => visOf(lm[s.sh]) + visOf(lm[s.hip]) + visOf(lm[s.ear]);
+  const lScore=score(SIDE.L), rScore=score(SIDE.R);
+  let side = lScore>rScore ? SIDE.L : SIDE.R;
+  if (Math.abs(lScore-rScore) < 0.15) side = (pos==='sideL') ? SIDE.L : SIDE.R; // near-tie -> labelled side
+  const visSh = lm[side.sh], visHip = lm[side.hip];
+  if (!vis(visSh,0.5) || !vis(visHip,0.5)) return { ok:false };
+  // head = the visible-side ear (the single up-facing anchor); fallback to eye/nose centroid only
+  // if that ear is hidden (e.g. buried in the pillow)
   let head=null, headSource='ear', headIdx=null;
-  const lE=lm[L.lEar], rE=lm[L.rEar];
-  const lV=(lE&&lE.visibility)||0, rV=(rE&&rE.visibility)||0;
-  if (Math.max(lV,rV) >= 0.5){ headIdx = (rV>=lV) ? L.rEar : L.lEar; head = lm[headIdx]; }
+  if (vis(lm[side.ear],0.5)){ headIdx=side.ear; head=lm[headIdx]; }
   else {
     const face=[lm[L.lEye],lm[L.rEye],lm[L.nose]].filter(p=>vis(p,0.5));
     if (face.length){ head={ x:face.reduce((s,p)=>s+p.x,0)/face.length,
                              y:face.reduce((s,p)=>s+p.y,0)/face.length }; headSource='face'; }
   }
   if (!head) return { ok:false };
-  const spine = { x:(shM.x-hipM.x)*aspect, y:(shM.y-hipM.y) }; // hip-mid -> shoulder-mid, up the spine
-  const neck  = { x:(head.x-shM.x)*aspect, y:(head.y-shM.y) }; // shoulder-mid -> head
+  const spine = { x:(visSh.x-visHip.x)*aspect, y:(visSh.y-visHip.y) }; // visible hip -> shoulder, up the spine
+  const neck  = { x:(head.x-visSh.x)*aspect, y:(head.y-visSh.y) };     // visible shoulder -> head
   const sLen=Math.hypot(spine.x,spine.y), nLen=Math.hypot(neck.x,neck.y);
   if (sLen<1e-4 || nLen<1e-4) return { ok:false };
   let c=(spine.x*neck.x+spine.y*neck.y)/(sLen*nLen); c=Math.max(-1,Math.min(1,c));
   let angle=Math.acos(c)*180/Math.PI;                   // apparent (2D image-plane) deviation off the spine line
   let is3D=false;
-  // 3D angle from world landmarks (metric, depth-aware) — more robust to camera perspective.
+  // 3D angle from world landmarks (metric, depth-aware) — visible-side joints only (no midpoints).
   // Only when the head came from a real ear landmark (world index known); else keep the 2D estimate.
-  if (world && headIdx!=null && world[L.lSh] && world[L.rSh] && world[L.lHip] && world[L.rHip] && world[headIdx]){
-    const w3 = (i,j)=>({ x:(world[i].x+world[j].x)/2, y:(world[i].y+world[j].y)/2, z:(world[i].z+world[j].z)/2 });
-    const Wsh=w3(L.lSh,L.rSh), Whip=w3(L.lHip,L.rHip), Wh=world[headIdx];
+  if (world && headIdx!=null && world[side.sh] && world[side.hip] && world[headIdx]){
+    const Wsh=world[side.sh], Whip=world[side.hip], Wh=world[headIdx];
     const sp={x:Wsh.x-Whip.x,y:Wsh.y-Whip.y,z:Wsh.z-Whip.z};
     const nk={x:Wh.x-Wsh.x,y:Wh.y-Wsh.y,z:Wh.z-Wsh.z};
     const sm=Math.hypot(sp.x,sp.y,sp.z), nm=Math.hypot(nk.x,nk.y,nk.z);
@@ -368,23 +378,12 @@ function headSupportGeom(lm, world, pos){
       angle=Math.acos(c3)*180/Math.PI; is3D=true;
     }
   }
-  // neutral head position: shoulder-mid + (head distance) along the straight spine direction
+  // neutral head position: visible shoulder + (head distance) along the straight spine direction
   const ux=spine.x/sLen, uy=spine.y/sLen;
-  const neutral = { x: shM.x + (ux/aspect)*nLen, y: shM.y + uy*nLen };
+  const neutral = { x: visSh.x + (ux/aspect)*nLen, y: visSh.y + uy*nLen };
   const dir = (head.y > neutral.y) ? 'toward' : 'away';  // lower in image = toward mattress
-  // derived draw-only reference points (estimates, not detected anatomy)
-  const neckPt = { x:(head.x+shM.x)/2, y:(head.y+shM.y)/2 };          // C7-ish neck reference
-  const headTop = { x: head.x + (head.x-shM.x)*0.3, y: head.y + (head.y-shM.y)*0.3 }; // estimated crown
-  return { ok:true, head, headSource, sh:shM, hip:hipM, neutral, angle, is3D, dir, neckPt, headTop };
-}
-// Interpolated reference points along the shoulder-mid -> hip-mid axis. VISUAL ONLY: a straight-line
-// interpolation can't reveal true spinal curvature (Pose has no landmarks between shoulders and hips).
-function trunkRefs(lm){
-  const shM = mid(lm[L.lSh],lm[L.rSh]);
-  const hipM = mid(lm[L.lHip],lm[L.rHip]);
-  if (!vis(shM,0.5) || !vis(hipM,0.5)) return { ok:false };
-  const at = t => ({ x: shM.x+(hipM.x-shM.x)*t, y: shM.y+(hipM.y-shM.y)*t });
-  return { ok:true, pts:[ at(1/3), at(2/3) ] };
+  return { ok:true, head, headSource, sh:visSh, hip:visHip, neutral, angle, is3D, dir,
+           knee:lm[side.knee], ankle:lm[side.ank] };
 }
 
 // ---- Rule evaluation ----
@@ -536,71 +535,67 @@ function project(p){
 // context `c`, using projection `proj` (normalized -> px) and size scale `s`.
 function paintPose(c, lm, findings, proj, s, world){
   if (!lm) return;
-  // bones
-  c.lineWidth = 3*s; c.strokeStyle = 'rgba(99,179,237,.9)'; c.lineCap='round';
-  for (const [a,b] of BONES){
-    if (!vis(lm[a],0.3) || !vis(lm[b],0.3)) continue;
-    const pa=proj(lm[a]), pb=proj(lm[b]);
-    c.beginPath(); c.moveTo(pa.x,pa.y); c.lineTo(pb.x,pb.y); c.stroke();
-  }
-  // head -> shoulder mid
-  if (vis(lm[L.nose],0.3) && vis(lm[L.lSh],0.3) && vis(lm[L.rSh],0.3)){
-    const pn=proj(lm[L.nose]); const sm=proj(mid(lm[L.lSh],lm[L.rSh]));
-    c.beginPath(); c.moveTo(pn.x,pn.y); c.lineTo(sm.x,sm.y); c.stroke();
-  }
-  // derived trunk reference points (visual only — straight-line interpolation, not curvature)
-  const tr = trunkRefs(lm);
-  if (tr && tr.ok){
-    c.save();
-    for (const p of tr.pts){
-      const q=proj(p);
-      c.beginPath(); c.arc(q.x,q.y,3.5*s,0,Math.PI*2);
-      c.fillStyle='rgba(138,160,182,.18)'; c.fill();
-      c.lineWidth=1.5*s; c.strokeStyle=REF_COLOR; c.stroke();
+  const sideView = (position==='sideR' || position==='sideL');
+  if (sideView){
+    // SIDE-LYING: one clean visible-side midline — head -> visible shoulder -> visible hip — plus a
+    // faint dashed "neutral" reference and the angle. No both-sides skeleton/dots: on a side-lying
+    // body the bed-side joints are fabricated and only add clutter (and the old corrupted middle line).
+    const hg = headSupportGeom(lm, world, position);
+    if (hg && hg.ok){
+      const hd=proj(hg.head), sP=proj(hg.sh), hP=proj(hg.hip), nt=proj(hg.neutral);
+      const off = hg.angle>=8;
+      const hero = off ? 'rgba(245,158,11,.95)' : 'rgba(56,189,248,.95)';
+      c.save();
+      c.lineCap='round'; c.lineJoin='round';
+      // muted visible-side leg (underneath) — only when hip/knee/ankle are clearly in frame
+      if (vis(hg.hip,0.5) && vis(hg.knee,0.5) && vis(hg.ankle,0.5)){
+        const kP=proj(hg.knee), aP=proj(hg.ankle);
+        c.lineWidth=2*s; c.strokeStyle='rgba(231,238,247,.28)';
+        c.beginPath(); c.moveTo(hP.x,hP.y); c.lineTo(kP.x,kP.y); c.lineTo(aP.x,aP.y); c.stroke();
+      }
+      // faint dashed "neutral" line: visible shoulder -> where a straight spine would put the head
+      c.setLineDash([7*s,6*s]); c.lineWidth=2.5*s; c.strokeStyle='rgba(56,189,248,.7)';
+      c.beginPath(); c.moveTo(sP.x,sP.y); c.lineTo(nt.x,nt.y); c.stroke();
+      c.setLineDash([]);
+      // hero midline (visible side): hip -> shoulder -> head, one bold polyline (amber if off-line)
+      c.lineWidth=4*s; c.strokeStyle=hero;
+      c.beginPath(); c.moveTo(hP.x,hP.y); c.lineTo(sP.x,sP.y); c.lineTo(hd.x,hd.y); c.stroke();
+      // small anchor dots at the visible shoulder + hip
+      c.fillStyle='#e7eef7';
+      for (const q of [sP,hP]){ c.beginPath(); c.arc(q.x,q.y,3.5*s,0,Math.PI*2); c.fill(); }
+      // head marker: a ring when it's a real ear (the single anchor); a plain dot for the face fallback
+      if (hg.headSource==='ear'){
+        c.beginPath(); c.arc(hd.x,hd.y,6*s,0,Math.PI*2);
+        c.fillStyle = off ? 'rgba(245,158,11,.35)' : 'rgba(56,189,248,.35)'; c.fill();
+        c.lineWidth=2.5*s; c.strokeStyle = off ? '#f59e0b' : '#38bdf8'; c.stroke();
+      } else {
+        c.beginPath(); c.arc(hd.x,hd.y,4.5*s,0,Math.PI*2); c.fillStyle='#e7eef7'; c.fill();
+      }
+      // angle label (notes 3D vs apparent basis)
+      c.fillStyle = off ? '#ffd9a8' : '#bfe9ff'; c.font=`bold ${12*s}px -apple-system,Segoe UI,Roboto,sans-serif`;
+      c.textAlign='left'; c.textBaseline='middle';
+      c.fillText(`${hg.angle.toFixed(0)}°${hg.is3D?' 3D':''}`, hd.x+10*s, hd.y);
+      c.restore();
     }
-    c.restore();
-  }
-  // head-support guide (side positions): spine line (hip-mid->shoulder-mid), dashed "neutral"
-  // extension, the visible ear as its own point, derived neck/head-top refs, and the angle.
-  const hg = headSupportGeom(lm, world, position);
-  if (hg && hg.ok){
-    const hd=proj(hg.head), sP=proj(hg.sh), hP=proj(hg.hip), nt=proj(hg.neutral);
-    c.save();
-    c.lineCap='round';
-    // 1a. solid spine line: hip-mid -> shoulder-mid
-    c.lineWidth=3*s; c.strokeStyle='rgba(56,189,248,.95)';
-    c.beginPath(); c.moveTo(hP.x,hP.y); c.lineTo(sP.x,sP.y); c.stroke();
-    // 1b. dashed straight "neutral" line: shoulder-mid -> where a straight spine puts the head
-    c.setLineDash([7*s,6*s]); c.lineWidth=2.5*s; c.strokeStyle='rgba(56,189,248,.7)';
-    c.beginPath(); c.moveTo(sP.x,sP.y); c.lineTo(nt.x,nt.y); c.stroke();
-    c.setLineDash([]);
-    // 1c. actual head line: shoulder-mid -> visible head/ear (amber if off-line)
-    const off = hg.angle>=8;
-    c.lineWidth=3*s; c.strokeStyle = off ? 'rgba(245,158,11,.95)' : 'rgba(56,189,248,.95)';
-    c.beginPath(); c.moveTo(sP.x,sP.y); c.lineTo(hd.x,hd.y); c.stroke();
-    // 2. the visible ear as its own ringed point
-    c.beginPath(); c.arc(hd.x,hd.y,6*s,0,Math.PI*2);
-    c.fillStyle = off ? 'rgba(245,158,11,.35)' : 'rgba(56,189,248,.35)'; c.fill();
-    c.lineWidth=2.5*s; c.strokeStyle = off ? '#f59e0b' : '#38bdf8'; c.stroke();
-    // 3. derived neck + head-top reference markers (muted; estimates, not detected anatomy)
-    for (const rp of [hg.neckPt, hg.headTop]){
-      const q=proj(rp);
-      c.beginPath(); c.arc(q.x,q.y,3.5*s,0,Math.PI*2);
-      c.fillStyle='rgba(138,160,182,.18)'; c.fill();
-      c.lineWidth=1.5*s; c.strokeStyle=REF_COLOR; c.stroke();
+  } else {
+    // BACK/SUPINE: both sides are genuinely visible (no bed-side fabrication), so the symmetric
+    // skeleton + dots are useful, honest context. Bones gate on visibility, so anything off-frame drops.
+    c.lineWidth = 3*s; c.strokeStyle = 'rgba(99,179,237,.9)'; c.lineCap='round';
+    for (const [a,b] of BONES){
+      if (!vis(lm[a],0.3) || !vis(lm[b],0.3)) continue;
+      const pa=proj(lm[a]), pb=proj(lm[b]);
+      c.beginPath(); c.moveTo(pa.x,pa.y); c.lineTo(pb.x,pb.y); c.stroke();
     }
-    // 4. angle label (notes 3D vs apparent basis)
-    c.fillStyle = off ? '#ffd9a8' : '#bfe9ff'; c.font=`bold ${12*s}px -apple-system,Segoe UI,Roboto,sans-serif`;
-    c.textAlign='left'; c.textBaseline='middle';
-    c.fillText(`${hg.angle.toFixed(0)}°${hg.is3D?' 3D':''}`, hd.x+10*s, hd.y);
-    c.restore();
-  }
-  // dots
-  c.fillStyle = '#e7eef7';
-  for (const i of DOTS){
-    if (!vis(lm[i],0.3)) continue;
-    const p=proj(lm[i]);
-    c.beginPath(); c.arc(p.x,p.y,4.5*s,0,Math.PI*2); c.fill();
+    if (vis(lm[L.nose],0.3) && vis(lm[L.lSh],0.3) && vis(lm[L.rSh],0.3)){
+      const pn=proj(lm[L.nose]); const sm=proj(mid(lm[L.lSh],lm[L.rSh]));
+      c.beginPath(); c.moveTo(pn.x,pn.y); c.lineTo(sm.x,sm.y); c.stroke();
+    }
+    c.fillStyle = '#e7eef7';
+    for (const i of DOTS){
+      if (!vis(lm[i],0.3)) continue;
+      const p=proj(lm[i]);
+      c.beginPath(); c.arc(p.x,p.y,4.5*s,0,Math.PI*2); c.fill();
+    }
   }
   // pinch-point markers
   c.font = `bold ${13*s}px -apple-system,Segoe UI,Roboto,sans-serif`;
@@ -833,7 +828,7 @@ function buildReportText(stamp){
   return out.join('\n');
 }
 function buildSnapshotCanvas(stamp){
-  const vw=video.videoWidth||720, vh=video.videoHeight||960;
+  const vw=video.videoWidth||1280, vh=video.videoHeight||720;
   const s=Math.max(1, vw/360);                 // size scale for lines/markers/text
   const pad=18*s, fs=15*s, lh=fs*1.32;
   const mirror = facingMode==='user';
